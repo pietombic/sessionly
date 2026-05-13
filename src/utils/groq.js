@@ -1,4 +1,5 @@
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const PROXY_URL = '/api/groq';
 const MODEL = 'llama-3.3-70b-versatile';
 const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const LS_KEY = 'sessionly-groq-key';
@@ -13,7 +14,51 @@ export function saveGroqKey(key) {
 }
 
 export function hasGroqKey() {
-  return !!getGroqKey();
+  return true; // proxy always available; user key is optional for unlimited access
+}
+
+import { supabase } from '../lib/supabase.js';
+
+async function getSessionToken() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Single fetch helper: uses user's own key if set, otherwise goes through server proxy.
+async function groqFetch(body) {
+  const userKey = getGroqKey();
+
+  if (userKey) {
+    return fetch(GROQ_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userKey}` },
+      body: JSON.stringify(body),
+    });
+  }
+
+  const token = await getSessionToken();
+  const res = await fetch(PROXY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  // Surface rate-limit errors with a specific code so callers can handle them
+  if (res.status === 429) {
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data?.error?.message || 'Limite giornaliero raggiunto');
+    err.code = data?.error?.code || 'RATE_LIMIT';
+    throw err;
+  }
+
+  return res;
 }
 
 function formatDateISO(date) {
@@ -33,13 +78,6 @@ function firstExamDate(exam) {
 }
 
 export async function extractExamFromDescription(description) {
-  const apiKey = getGroqKey();
-  if (!apiKey) {
-    const err = new Error('Chiave Groq non configurata.');
-    err.code = 'NO_KEY';
-    throw err;
-  }
-
   const today = formatDateISO(new Date());
   const currentYear = new Date().getFullYear();
 
@@ -80,18 +118,14 @@ Regole tag: informatica/reti → indigo o teal | matematica/fisica → amber o b
 
 Rispondi SOLO con JSON valido, zero markdown.`;
 
-  const response = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Descrizione: "${description}"` },
-      ],
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-    }),
+  const response = await groqFetch({
+    model: MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Descrizione: "${description}"` },
+    ],
+    temperature: 0.1,
+    response_format: { type: 'json_object' },
   });
 
   if (!response.ok) {
@@ -126,13 +160,6 @@ Rispondi SOLO con JSON valido, zero markdown.`;
 }
 
 export async function generateSessionPlan(exams, preferences, includeStudyBlocks, studyPrefs) {
-  const apiKey = getGroqKey();
-  if (!apiKey) {
-    const err = new Error('Chiave Groq non configurata.');
-    err.code = 'NO_KEY';
-    throw err;
-  }
-
   const today = formatDateISO(new Date());
 
   const examSummaries = exams
@@ -191,19 +218,15 @@ Rispondi SOLO con JSON valido, senza markdown.`;
 
   const userPrompt = `Esami disponibili:\n${examSummaries}\n\nPreferenze utente: "${preferences || 'Nessuna preferenza specifica'}"\n\nRestituisci:\n{"plans": [{"description": "breve razionale del piano", "date_picks": [{"examId": "...", "componentName": "...", "date": "YYYY-MM-DD"}], "study_windows": [{"examId": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "start_time": "HH:MM", "end_time": "HH:MM", "label": "descrizione cosa studiare"}]}]}`;
 
-  const response = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.35,
-      response_format: { type: 'json_object' },
-      max_tokens: 4096,
-    }),
+  const response = await groqFetch({
+    model: MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.35,
+    response_format: { type: 'json_object' },
+    max_tokens: 4096,
   });
 
   if (!response.ok) {
@@ -257,13 +280,6 @@ Rispondi SOLO con JSON valido, senza markdown.`;
 }
 
 export async function generateStudyPlan(exams) {
-  const apiKey = getGroqKey();
-  if (!apiKey) {
-    const err = new Error('Chiave Groq non configurata.');
-    err.code = 'NO_KEY';
-    throw err;
-  }
-
   const examSummaries = exams
     .filter((e) => firstExamDate(e))
     .map((e) => {
@@ -293,21 +309,14 @@ Rispondi SOLO con un oggetto JSON valido, senza markdown.`;
 
   const userPrompt = `Esami da pianificare:\n${examSummaries}\n\nRestituisci un JSON nel formato:\n{"study_windows": [{"examId": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "label": "breve descrizione focus studio"}]}`;
 
-  const response = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-    }),
+  const response = await groqFetch({
+    model: MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
   });
 
   if (!response.ok) {
@@ -379,13 +388,6 @@ function reviveExamDrafts(rawExams) {
 // Accepts an array of { base64, mimeType } — all images sent in one request so the
 // model can cross-reference between screenshots (e.g. infer missing month headers).
 export async function extractExamsFromImages(images) {
-  const apiKey = getGroqKey();
-  if (!apiKey) {
-    const err = new Error('Chiave Groq non configurata.');
-    err.code = 'NO_KEY';
-    throw err;
-  }
-
   const today = formatDateISO(new Date());
   const currentYear = new Date().getFullYear();
   const n = images.length;
@@ -441,21 +443,17 @@ Restituisci SOLO JSON valido senza markdown:
 
 Regole tag: informatica/reti → indigo o teal | matematica/fisica → amber o brick | scienze → sage | lingue → plum | economia → ochre | altro → amber`;
 
-  const response = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: VISION_MODEL,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          ...imageBlocks,
-        ],
-      }],
-      temperature: 0.1,
-      max_tokens: 4096,
-    }),
+  const response = await groqFetch({
+    model: VISION_MODEL,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        ...imageBlocks,
+      ],
+    }],
+    temperature: 0.1,
+    max_tokens: 4096,
   });
 
   if (!response.ok) {

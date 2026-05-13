@@ -80,3 +80,60 @@ create policy "Date picks: accesso owner"
 
 -- ── Aggiunge completed a study_windows (per marcare blocchi di studio) ───────
 alter table public.study_windows add column if not exists completed boolean not null default false;
+
+-- ── Rate limiting per utente ─────────────────────────────────────────────────
+
+create table if not exists public.api_rate_limits (
+  user_id     uuid  primary key references auth.users on delete cascade,
+  calls_today integer not null default 0,
+  reset_date  date    not null default current_date
+);
+
+alter table public.api_rate_limits enable row level security;
+
+-- Gli utenti possono leggere solo il proprio contatore (utile per mostrarlo in UI)
+create policy "Rate limits: lettura owner"
+  on public.api_rate_limits for select
+  using (auth.uid() = user_id);
+
+-- Scrittura consentita solo alla funzione SECURITY DEFINER (non al client diretto)
+
+-- Funzione atomica: resetta il contatore se il giorno è cambiato,
+-- poi controlla il limite e incrementa solo se consentito.
+create or replace function public.check_and_increment_rate_limit(
+  p_user_id uuid,
+  p_limit   integer default 30
+)
+returns table(allowed boolean, calls_used integer)
+language plpgsql security definer as $$
+declare
+  v_calls integer;
+begin
+  -- Assicura che la riga esista
+  insert into public.api_rate_limits (user_id, calls_today, reset_date)
+  values (p_user_id, 0, current_date)
+  on conflict (user_id) do nothing;
+
+  -- Resetta se il giorno è cambiato, recupera il contatore attuale
+  update public.api_rate_limits
+  set
+    calls_today = case when reset_date < current_date then 0 else calls_today end,
+    reset_date  = current_date
+  where user_id = p_user_id
+  returning calls_today into v_calls;
+
+  -- Limite raggiunto: non incrementare
+  if v_calls >= p_limit then
+    return query select false, v_calls;
+    return;
+  end if;
+
+  -- Incrementa
+  update public.api_rate_limits
+  set calls_today = calls_today + 1
+  where user_id = p_user_id
+  returning calls_today into v_calls;
+
+  return query select true, v_calls;
+end;
+$$;
