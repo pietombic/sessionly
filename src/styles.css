@@ -3444,11 +3444,15 @@ textarea.input {
   min-height: 480px;
 }
 
-.modal-import .modal-body {
-  flex-direction: row;
+.import-body {
+  flex-direction: column;
   padding: 0;
   gap: 0;
   overflow: hidden;
+}
+
+.import-body-split {
+  flex-direction: row;
 }
 
 .import-left {
@@ -4452,6 +4456,62 @@ textarea.input {
     margin-bottom: 0;
     max-height: 90dvh;
     border-radius: 16px 16px 0 0;
+  }
+
+  /* ── Image import modal ───────────────────────────────────────────────── */
+
+  .modal-import {
+    min-height: 0;
+    max-height: 92dvh;
+  }
+
+  /* When drafts appear, stack vertically instead of side by side */
+  .import-body-split {
+    flex-direction: column;
+  }
+
+  .import-left {
+    width: 100%;
+    min-height: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+    padding: 16px;
+    gap: 10px;
+  }
+
+  /* Compact dropzone on mobile */
+  .import-dropzone {
+    padding: 20px 16px;
+    gap: 6px;
+  }
+
+  .import-dropzone-icon {
+    font-size: 28px;
+  }
+
+  /* Hide drag hint on touch devices */
+  .import-dropzone-sub-drag {
+    display: none;
+  }
+
+  /* Smaller thumbnails to save space */
+  .import-thumb {
+    width: 52px;
+    height: 52px;
+  }
+
+  .import-right {
+    flex: 1;
+    min-height: 200px;
+    max-height: 40dvh;
+  }
+
+  .import-drafts-list {
+    padding: 8px 12px;
+  }
+
+  .import-right-hint {
+    display: none;
   }
 
 }

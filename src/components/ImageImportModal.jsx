@@ -163,7 +163,7 @@ export function ImageImportModal({ onImport, onNoGroqKey, onClose }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="modal-body" style={{ flexDirection: hasDrafts ? 'row' : 'column', gap: 0, padding: 0 }}>
+        <div className={`modal-body import-body${hasDrafts ? ' import-body-split' : ''}`} style={{ gap: 0, padding: 0 }}>
 
           {/* Left: dropzone + thumbnail strip */}
           <div className="import-left" style={{ justifyContent: images.length > 0 ? 'flex-start' : 'center' }}>
@@ -193,8 +193,8 @@ export function ImageImportModal({ onImport, onNoGroqKey, onClose }) {
               ) : (
                 <>
                   <div className="import-dropzone-icon">📷</div>
-                  <div className="import-dropzone-text">Trascina qui gli screenshot</div>
-                  <div className="import-dropzone-sub">o clicca per selezionare i file</div>
+                  <div className="import-dropzone-text">Seleziona gli screenshot</div>
+                  <div className="import-dropzone-sub import-dropzone-sub-drag">o trascina qui i file</div>
                   <div className="import-dropzone-formats">JPG · PNG · WebP · HEIC</div>
                 </>
               )}

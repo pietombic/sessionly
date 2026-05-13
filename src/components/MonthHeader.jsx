@@ -58,6 +58,7 @@ export function MonthHeader({
   onExport,
   user, onLogout,
 }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const isWeek = view === 'week' && weekStart;
   const titleText = isWeek ? weekRangeTitle(weekStart) : MONTHS_IT[month];
   const titleYear = isWeek ? weekStart.getFullYear() : year;
@@ -85,14 +86,34 @@ export function MonthHeader({
           {aiLoading ? 'Generazione...' : 'Piano AI'}
         </button>
 
-        {hasPlan && (
+        {hasPlan && !confirmRemove && (
           <button
             className="remove-plan-btn"
-            onClick={onRemovePlan}
+            onClick={() => setConfirmRemove(true)}
             title="Rimuovi il piano AI"
           >
             Rimuovi piano
           </button>
+        )}
+
+        {hasPlan && confirmRemove && (
+          <div className="delete-confirm-row">
+            <span className="delete-confirm-text">Sicuro?</span>
+            <button
+              className="btn danger"
+              style={{ padding: '5px 10px', fontSize: 12 }}
+              onClick={() => { setConfirmRemove(false); onRemovePlan(); }}
+            >
+              Sì, rimuovi
+            </button>
+            <button
+              className="btn ghost"
+              style={{ padding: '5px 10px', fontSize: 12 }}
+              onClick={() => setConfirmRemove(false)}
+            >
+              Annulla
+            </button>
+          </div>
         )}
 
         {hasPlan && (
