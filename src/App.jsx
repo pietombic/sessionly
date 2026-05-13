@@ -17,15 +17,24 @@ import { AuthModal } from './components/AuthModal.jsx';
 import { LandingScreen } from './components/LandingScreen.jsx';
 import { GroqKeyModal } from './components/GroqKeyModal.jsx';
 
+const TWEAKS_LS_KEY = 'sessionly-tweaks';
+
 const TWEAK_DEFAULTS = {
   palette: 'classic',
-  font: 'lora',
+  font: 'unbounded',
   studyStyle: 'tratteggio',
   sliderStyle: 'ticks',
-  dark: false,
+  dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
   showOnboarding: false,
-  clipMonth: false,
 };
+
+function loadTweaks() {
+  try {
+    const saved = localStorage.getItem(TWEAKS_LS_KEY);
+    if (saved) return { ...TWEAK_DEFAULTS, ...JSON.parse(saved) };
+  } catch {}
+  return TWEAK_DEFAULTS;
+}
 
 function getWeekStart(date) {
   const d = new Date(date);
@@ -90,7 +99,7 @@ export default function App() {
   const [dataLoading, setDataLoading] = useState(false);
 
   // ── UI state ───────────────────────────────────────────────────────────────
-  const [tweaks, setTweaks] = useState(TWEAK_DEFAULTS);
+  const [tweaks, setTweaks] = useState(loadTweaks);
   const setTweak = (key, val) => setTweaks((prev) => ({ ...prev, [key]: val }));
 
   const [year, setYear] = useState(TODAY.getFullYear());
@@ -101,16 +110,19 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [showGroqKeyModal, setShowGroqKeyModal] = useState(false);
+  const [groqKeyAfterSave, setGroqKeyAfterSave] = useState(null); // 'plan' | null
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
-  // Apply tweaks to <html> data-attributes for CSS token switching
+  // Apply tweaks to <html> data-attributes and persist to localStorage
   useEffect(() => {
     const root = document.documentElement;
     root.dataset.palette = tweaks.palette;
     root.dataset.font = tweaks.font;
     root.dataset.dark = tweaks.dark ? '1' : '0';
-  }, [tweaks.palette, tweaks.font, tweaks.dark]);
+    try { localStorage.setItem(TWEAKS_LS_KEY, JSON.stringify(tweaks)); } catch {}
+  }, [tweaks]);
 
   // ── Load data from Supabase ────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -149,9 +161,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, [loadData]);
 
-  useEffect(() => {
-    if (user) loadData();
-  }, [user, loadData]);
+  // loadData is already called inside onAuthStateChange when a user logs in.
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -172,9 +182,9 @@ export default function App() {
     setTweak('showOnboarding', false);
 
     try {
-      await upsertExam(savedExam);
+      await upsertExam(savedExam, user.id);
     } catch (err) {
-      console.error('Errore salvataggio esame:', err);
+      setSaveError(`Errore salvataggio: ${err.message}`);
     }
   };
 
@@ -187,7 +197,7 @@ export default function App() {
     try {
       await Promise.all([removeExam(id), removeStudyWindowsForExam(id)]);
     } catch (err) {
-      console.error('Errore eliminazione esame:', err);
+      setSaveError(`Errore eliminazione: ${err.message}`);
     }
   };
 
@@ -201,6 +211,7 @@ export default function App() {
       await replaceStudyWindows(windows);
     } catch (err) {
       if (err.code === 'NO_KEY') {
+        setGroqKeyAfterSave('plan');
         setShowGroqKeyModal(true);
       } else {
         setAiError(err.message);
@@ -211,8 +222,10 @@ export default function App() {
   };
 
   const handleGroqKeySaved = () => {
+    const runPlan = groqKeyAfterSave === 'plan';
     setShowGroqKeyModal(false);
-    handleAIPlan();
+    setGroqKeyAfterSave(null);
+    if (runPlan) handleAIPlan();
   };
 
   // ── Navigation ─────────────────────────────────────────────────────────────
@@ -264,6 +277,7 @@ export default function App() {
     <div className="app">
       <Sidebar
         exams={visibleExams}
+        studyWindows={visibleStudy}
         today={TODAY}
         selectedId={selectedId}
         onSelect={openEdit}
@@ -286,6 +300,17 @@ export default function App() {
           user={user}
           onLogout={handleLogout}
         />
+
+        {saveError && (
+          <div className="ai-error" style={{ margin: '12px 32px 0' }}>
+            <span>⚠</span>
+            <span>{saveError}</span>
+            <button
+              style={{ marginLeft: 'auto', appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: 'inherit', fontSize: 16 }}
+              onClick={() => setSaveError(null)}
+            >✕</button>
+          </div>
+        )}
 
         {aiError && (
           <div className="ai-error" style={{ margin: '12px 32px 0' }}>
@@ -317,7 +342,6 @@ export default function App() {
             studyWindows={visibleStudy}
             today={TODAY}
             studyStyle={tweaks.studyStyle}
-            clipMonth={tweaks.clipMonth}
             onSelectExam={openEdit}
           />
         )}
@@ -327,9 +351,11 @@ export default function App() {
         <ExamForm
           initial={initial}
           sliderStyle={tweaks.sliderStyle}
+          today={TODAY}
           onClose={() => setModal(null)}
           onSave={saveExam}
           onDelete={deleteExam}
+          onNoGroqKey={() => { setGroqKeyAfterSave(null); setShowGroqKeyModal(true); }}
         />
       )}
 

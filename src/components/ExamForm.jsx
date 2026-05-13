@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { TAG_COLORS, TYPES } from '../data.js';
-import { loadScore, statusLabel } from '../utils/dates.js';
+import { loadScore, statusLabel, startOfDay } from '../utils/dates.js';
 import { CustomSlider, LoadBadge } from './ui/index.jsx';
+import { extractExamFromDescription } from '../utils/groq.js';
 
 function toInputDate(d) {
   if (!d) return '';
@@ -37,7 +38,9 @@ function reviveDates(key, val) {
   return val;
 }
 
-export function ExamForm({ initial, sliderStyle, onClose, onSave, onDelete }) {
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelete, onNoGroqKey }) {
   const isEditing = !!initial;
 
   const [draft, setDraft] = useState(() => {
@@ -45,6 +48,95 @@ export function ExamForm({ initial, sliderStyle, onClose, onSave, onDelete }) {
     return JSON.parse(JSON.stringify(initial), reviveDates);
   });
 
+  // ── voice / AI section ──────────────────────────────────────────────────
+  const [showVoice, setShowVoice] = useState(false);
+  const [voiceText, setVoiceText] = useState('');
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
+  const [recording, setRecording] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const toggleRecording = () => {
+    if (recording) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const recog = new SR();
+    recog.lang = 'it-IT';
+    recog.continuous = true;
+    recog.interimResults = false;
+    recog.onresult = (e) => {
+      const transcript = Array.from(e.results).map((r) => r[0].transcript).join(' ');
+      setVoiceText((prev) => prev ? prev + ' ' + transcript : transcript);
+    };
+    recog.onend = () => setRecording(false);
+    recog.onerror = () => setRecording(false);
+    recog.start();
+    recognitionRef.current = recog;
+    setRecording(true);
+  };
+
+  const handleExtract = async () => {
+    if (!voiceText.trim()) return;
+    setVoiceLoading(true);
+    setVoiceError('');
+    try {
+      const extracted = await extractExamFromDescription(voiceText);
+
+      const newComponents = extracted.components?.length > 0
+        ? extracted.components.map((c, i) => ({
+            name: c.name,
+            dates: c.dates.map((d, j) => ({
+              id: `ext_${i}_${j}_${Date.now()}`,
+              date: d.date,
+              time: d.time,
+              room: d.room,
+              locked: d.locked,
+            })),
+          }))
+        : null;
+
+      let newType = draft.type;
+      if (newComponents) {
+        const names = new Set(newComponents.map((c) => c.name));
+        const matched = TYPES.find(
+          (t) => t.components.length === names.size && t.components.every((n) => names.has(n))
+        );
+        if (matched) newType = matched.id;
+      }
+
+      setDraft((prev) => ({
+        ...prev,
+        ...(extracted.name ? { name: extracted.name } : {}),
+        ...(extracted.tag ? { tag: extracted.tag } : {}),
+        ...(extracted.effort != null ? { effort: extracted.effort } : {}),
+        ...(extracted.difficulty != null ? { difficulty: extracted.difficulty } : {}),
+        ...(newComponents ? { components: newComponents, type: newType } : {}),
+      }));
+      setShowVoice(false);
+      setVoiceText('');
+    } catch (err) {
+      if (err.code === 'NO_KEY') {
+        onNoGroqKey?.();
+        setShowVoice(false);
+      } else {
+        setVoiceError(err.message || 'Errore durante l\'estrazione.');
+      }
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  // ── exam result (post-date) ─────────────────────────────────────────────
+  const earliestDate = draft.components
+    .flatMap((c) => c.dates.map((d) => d.date))
+    .filter(Boolean)
+    .sort((a, b) => a - b)[0];
+
+  const examHasPassed = isEditing && today && earliestDate
+    && startOfDay(earliestDate) <= startOfDay(today);
+
+  // ── form helpers ────────────────────────────────────────────────────────
   const onTypeChange = (typeId) => {
     const typeDef = TYPES.find((t) => t.id === typeId);
     if (!typeDef) return;
@@ -101,6 +193,61 @@ export function ExamForm({ initial, sliderStyle, onClose, onSave, onDelete }) {
         </div>
 
         <div className="modal-body scroll">
+
+          {/* ── AI voice section ──────────────────── */}
+          {showVoice ? (
+            <div className="voice-section">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span className="field-label" style={{ margin: 0 }}>Descrivi l'esame</span>
+                <button className="modal-close" style={{ width: 22, height: 22, fontSize: 12 }} onClick={() => { setShowVoice(false); setVoiceError(''); }}>✕</button>
+              </div>
+              <textarea
+                className="input"
+                style={{ minHeight: 86, fontSize: 13, lineHeight: 1.5 }}
+                placeholder={'es. "Ho un esame di Analisi II il 24 giugno. C\'è tanto da studiare, è difficile. C\'è anche un orale il 7 luglio."'}
+                value={voiceText}
+                onChange={(e) => { setVoiceText(e.target.value); setVoiceError(''); }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {SR && (
+                  <button
+                    type="button"
+                    className={`mic-btn ${recording ? 'recording' : ''}`}
+                    onClick={toggleRecording}
+                    title={recording ? 'Ferma registrazione' : 'Registra con microfono'}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="2" width="6" height="12" rx="3"/>
+                      <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8"/>
+                    </svg>
+                    {recording ? 'Ferma' : 'Registra'}
+                  </button>
+                )}
+                {voiceError && (
+                  <span style={{ fontSize: 11.5, color: 'var(--warn)', flex: 1 }}>⚠ {voiceError}</span>
+                )}
+                <button
+                  className={`ai-btn ${voiceLoading ? 'loading' : ''}`}
+                  style={{ marginLeft: 'auto', padding: '7px 12px', fontSize: 12 }}
+                  disabled={!voiceText.trim() || voiceLoading}
+                  onClick={handleExtract}
+                >
+                  <span>{voiceLoading ? '⟳' : '✦'}</span>
+                  {voiceLoading ? 'Estrazione...' : 'Estrai informazioni'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="ai-btn"
+              style={{ alignSelf: 'flex-start', fontSize: 12, padding: '7px 12px' }}
+              onClick={() => setShowVoice(true)}
+            >
+              <span>✦</span> Descrivi con AI
+            </button>
+          )}
 
           {/* ── basics ─────────────────────────────── */}
           <div className="col" style={{ gap: 12 }}>
@@ -325,6 +472,34 @@ export function ExamForm({ initial, sliderStyle, onClose, onSave, onDelete }) {
               onChange={(e) => set({ notes: e.target.value })}
             />
           </div>
+
+          {/* ── exam outcome (shown only when date has passed) ── */}
+          {examHasPassed && (
+            <div className="outcome-section">
+              <div className="field-label" style={{ marginBottom: 10 }}>Com'è andata?</div>
+              <div className="outcome-btns">
+                <button
+                  className={`outcome-btn outcome-passed ${draft.status === 'done' ? 'on' : ''}`}
+                  onClick={() => set({ status: 'done' })}
+                >
+                  <span>✓</span> Superato
+                </button>
+                <button
+                  className={`outcome-btn outcome-failed ${draft.status === 'failed' ? 'on' : ''}`}
+                  onClick={() => set({ status: 'failed' })}
+                >
+                  <span>✗</span> Non superato
+                </button>
+                <button
+                  className={`outcome-btn outcome-skipped ${draft.status === 'saltato' ? 'on' : ''}`}
+                  onClick={() => set({ status: 'saltato' })}
+                >
+                  <span>○</span> Saltato
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
 
         <div className="modal-ft">

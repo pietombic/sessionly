@@ -75,13 +75,8 @@ function buildBuckets(cells, exams, studyWindows) {
   return buckets;
 }
 
-export function CalendarGrid({ year, month, exams, studyWindows, today, studyStyle, clipMonth, onSelectExam }) {
+export function CalendarGrid({ year, month, exams, studyWindows, today, studyStyle, onSelectExam }) {
   const allCells = useMemo(() => monthGrid(year, month), [year, month]);
-  const cells = useMemo(() => {
-    if (!clipMonth) return allCells;
-    const lastDay = new Date(year, month + 1, 0);
-    return allCells.filter((c) => c.date <= lastDay);
-  }, [allCells, clipMonth, year, month]);
   const buckets = useMemo(() => buildBuckets(allCells, exams, studyWindows), [allCells, exams, studyWindows]);
   const { tt, show, move, hide } = useTooltip();
 
@@ -115,7 +110,7 @@ export function CalendarGrid({ year, month, exams, studyWindows, today, studySty
         {WEEKDAYS_IT.map((wd) => <div key={wd} className="wd">{wd}</div>)}
       </div>
       <div className="cal-grid">
-        {cells.map((c, i) => {
+        {allCells.map((c, i) => {
           const key = c.date.toDateString();
           const b = buckets.get(key) || { events: [], studies: [] };
           const isToday = sameDay(c.date, today);

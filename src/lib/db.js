@@ -41,13 +41,14 @@ export async function fetchExams() {
   return data.map((row) => ({ id: row.id, ...reviveExam(row.data) }));
 }
 
-export async function upsertExam(exam) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Non autenticato');
+export async function upsertExam(exam, userId) {
   const { id, ...rest } = exam;
   const { error } = await supabase
     .from('exams')
-    .upsert({ id, user_id: user.id, data: serializeExam(rest), updated_at: new Date().toISOString() });
+    .upsert(
+      { id, user_id: userId, data: serializeExam(rest), updated_at: new Date().toISOString() },
+      { onConflict: 'id' }
+    );
   if (error) throw error;
 }
 

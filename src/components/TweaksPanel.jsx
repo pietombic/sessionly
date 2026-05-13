@@ -246,9 +246,10 @@ export function TweaksPanel({ tweaks, onTweak, onGroqKey }) {
                 label=""
                 value={tweaks.font}
                 options={[
-                  { value: 'lora',     label: 'Lora' },
-                  { value: 'playfair', label: 'Playfair' },
-                  { value: 'freight',  label: 'Cormorant' },
+                  { value: 'unbounded', label: 'Unbounded' },
+                  { value: 'lora',      label: 'Lora' },
+                  { value: 'playfair',  label: 'Playfair' },
+                  { value: 'freight',   label: 'Cormorant' },
                 ]}
                 onChange={(v) => onTweak('font', v)}
               />
@@ -277,12 +278,6 @@ export function TweaksPanel({ tweaks, onTweak, onGroqKey }) {
                 ]}
                 onChange={(v) => onTweak('sliderStyle', v)}
               />
-              <TweakToggle
-                label="Taglia mese"
-                value={tweaks.clipMonth}
-                onChange={(v) => onTweak('clipMonth', v)}
-              />
-
               <TweakSection label="AI" />
               <div className="twk-row">
                 <div className="twk-lbl">

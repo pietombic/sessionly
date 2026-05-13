@@ -2,7 +2,7 @@ import { TAG_CSS } from '../data.js';
 import { startOfDay, formatDueLabel } from '../utils/dates.js';
 import { Dots, LoadBadge, StatusBadge } from './ui/index.jsx';
 
-function ExamCard({ exam, today, selected, onClick }) {
+function ExamCard({ exam, today, selected, planned, onClick }) {
   const allDates = exam.components.flatMap((c) =>
     c.dates.map((d) => ({ ...d, component: c.name }))
   );
@@ -16,7 +16,7 @@ function ExamCard({ exam, today, selected, onClick }) {
 
   return (
     <div
-      className={`exam-card ${selected ? 'selected' : ''}`}
+      className={`exam-card ${selected ? 'selected' : ''} ${!planned ? 'unplanned' : ''}`}
       style={{ '--tag': TAG_CSS[exam.tag] }}
       onClick={onClick}
     >
@@ -46,7 +46,8 @@ function ExamCard({ exam, today, selected, onClick }) {
   );
 }
 
-export function Sidebar({ exams, today, selectedId, onSelect, onAdd }) {
+export function Sidebar({ exams, studyWindows = [], today, selectedId, onSelect, onAdd }) {
+  const plannedIds = new Set(studyWindows.map((w) => w.examId));
   return (
     <aside className="sidebar">
       <div className="sidebar-hd">
@@ -82,9 +83,15 @@ export function Sidebar({ exams, today, selectedId, onSelect, onAdd }) {
               exam={e}
               today={today}
               selected={selectedId === e.id}
+              planned={plannedIds.has(e.id)}
               onClick={() => onSelect(e.id)}
             />
           ))}
+          {studyWindows.length === 0 && exams.length > 0 && (
+            <div className="sidebar-plan-hint">
+              Premi <strong>Piano AI</strong> per pianificare gli esami
+            </div>
+          )}
         </div>
       )}
 
