@@ -1,0 +1,18 @@
+# dipendenze
+node_modules/
+
+# build
+dist/
+
+# variabili d'ambiente — NON pubblicare mai questo file
+.env
+.env.local
+.env.*.local
+
+# sistema operativo
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/

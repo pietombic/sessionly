@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(cp \"/Users/pietrotombaccini/.claude/projects/-Users-pietrotombaccini-Desktop-organizzaEsami/7c59e26d-02e2-41b6-ab91-459c4df7d4ec/tool-results/webfetch-1778666489453-39p90i.bin\" /tmp/design.gz)",
+      "Bash(gunzip -f /tmp/design.gz)",
+      "Read(//tmp/**)",
+      "Bash(tar -xO --list)",
+      "Bash(tar -tf /tmp/design)",
+      "Bash(mkdir -p /tmp/design_extracted)",
+      "Bash(tar -xf /tmp/design -C /tmp/design_extracted)",
+      "Bash(gunzip -c \"/Users/pietrotombaccini/.claude/projects/-Users-pietrotombaccini-Desktop-organizzaEsami/7c59e26d-02e2-41b6-ab91-459c4df7d4ec/tool-results/webfetch-1778666489453-39p90i.bin\")",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(pkill -f \"vite\")"
+    ]
+  }
+}
