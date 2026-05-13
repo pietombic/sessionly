@@ -21,7 +21,14 @@ function icsDateTimeEnd(date, time) {
   }
   const [h, m] = time.split(':');
   const endH = Number(h) + 2;
+  // Clamp to 23:59 if overflow
+  if (endH >= 24) return `${icsDate(date)}T235900`;
   return `${icsDate(date)}T${pad(endH)}${pad(Number(m))}00`;
+}
+
+function icsNow() {
+  const n = new Date();
+  return `${n.getUTCFullYear()}${pad(n.getUTCMonth()+1)}${pad(n.getUTCDate())}T${pad(n.getUTCHours())}${pad(n.getUTCMinutes())}${pad(n.getUTCSeconds())}Z`;
 }
 
 function escapeICS(str) {
@@ -32,58 +39,92 @@ function escapeICS(str) {
     .replace(/\n/g, '\\n');
 }
 
-export function generateICS(exams) {
+// RFC 5545 §3.1 — fold lines longer than 75 octets
+function fold(line) {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+  let result = '';
+  let buf = '';
+  for (const ch of line) {
+    const next = buf + ch;
+    if (enc.encode(next).length > (result === '' ? 75 : 74)) {
+      result += (result === '' ? '' : '\r\n ') + buf;
+      buf = ch;
+    } else {
+      buf = next;
+    }
+  }
+  if (buf) result += (result === '' ? '' : '\r\n ') + buf;
+  return result;
+}
+
+function buildVEvent(exam, comp, dt, dtstamp) {
+  const uid = `${exam.id}-${comp.name.replace(/\s/g, '')}-${dt.id || dt.date.getTime()}@sessionly`;
+  const hasTime = !!dt.time;
+  const dtStart = icsDateTime(dt.date, dt.time);
+  const dtEnd = icsDateTimeEnd(dt.date, dt.time);
+  const summary = escapeICS(`${exam.name} — ${comp.name}${dt.locked ? ' 🔒' : ''}`);
+  const description = escapeICS(
+    [
+      `${exam.name} · ${comp.name}`,
+      `Difficoltà: ${exam.difficulty}/10`,
+      `Effort: ${exam.effort}/10`,
+      exam.notes ? exam.notes : null,
+    ].filter(Boolean).join('\\n')
+  );
+
+  const props = [
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${dtstamp}`,
+    `SUMMARY:${summary}`,
+    hasTime ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
+    hasTime ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`,
+    dt.room ? `LOCATION:${escapeICS(dt.room)}` : null,
+    `DESCRIPTION:${description}`,
+    'END:VEVENT',
+  ].filter(Boolean);
+
+  return props;
+}
+
+function buildICS(events) {
+  const dtstamp = icsNow();
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//Sessionly//IT',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
+    'X-WR-CALNAME:Sessionly',
   ];
 
-  for (const exam of exams) {
-    for (const comp of exam.components) {
-      for (const dt of comp.dates) {
-        if (!dt.date) continue;
-
-        const uid = `${exam.id}-${comp.name.replace(/\s/g, '')}-${dt.id}@sessionly`;
-        const hasTime = !!dt.time;
-        const dtStart = icsDateTime(dt.date, dt.time);
-        const dtEnd = icsDateTimeEnd(dt.date, dt.time);
-        const summary = escapeICS(`${exam.name} — ${comp.name}${dt.locked ? ' 🔒' : ''}`);
-        const description = escapeICS(
-          `${exam.name} · ${comp.name}\nPriorità: ${exam.priority}\nDifficoltà: ${exam.difficulty}/10\nEffort: ${exam.effort}/10${exam.notes ? '\n\n' + exam.notes : ''}`
-        );
-
-        lines.push(
-          'BEGIN:VEVENT',
-          `UID:${uid}`,
-          `SUMMARY:${summary}`,
-          hasTime ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
-          hasTime ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`,
-          dt.room ? `LOCATION:${escapeICS(dt.room)}` : '',
-          `DESCRIPTION:${description}`,
-          'END:VEVENT',
-        ).filter(Boolean);
-      }
-    }
+  for (const { exam, comp, dt } of events) {
+    lines.push(...buildVEvent(exam, comp, dt, dtstamp));
   }
 
   lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
+  return lines.map(fold).join('\r\n') + '\r\n';
 }
 
-export function downloadICS(exams) {
-  const content = generateICS(exams);
+function triggerDownload(content, filename) {
   const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'sessionly.ics';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+export function generateICS(exams) {
+  return buildICS(getAllEvents(exams));
+}
+
+export function downloadICS(exams) {
+  triggerDownload(generateICS(exams), 'sessionly.ics');
 }
 
 export function googleCalendarURL(exam, comp, dt) {
@@ -102,17 +143,19 @@ export function googleCalendarURL(exam, comp, dt) {
       return `${next.getFullYear()}${pad(next.getMonth() + 1)}${pad(next.getDate())}`;
     }
     const [h, m] = time.split(':');
-    return `${icsDate(date)}T${pad(Number(h) + 2)}${pad(Number(m))}00`;
+    const endH = Math.min(Number(h) + 2, 23);
+    return `${icsDate(date)}T${pad(endH)}${pad(Number(m))}00`;
   };
-
-  const start = fmt(dt.date, dt.time);
-  const end = fmtEnd(dt.date, dt.time);
 
   const params = new URLSearchParams({
     action: 'TEMPLATE',
     text: `${exam.name} — ${comp.name}${dt.locked ? ' 🔒' : ''}`,
-    dates: `${start}/${end}`,
-    details: `Priorità: ${exam.priority}\nDifficoltà: ${exam.difficulty}/10\nEffort: ${exam.effort}/10${exam.notes ? '\n\n' + exam.notes : ''}`,
+    dates: `${fmt(dt.date, dt.time)}/${fmtEnd(dt.date, dt.time)}`,
+    details: [
+      `Difficoltà: ${exam.difficulty}/10`,
+      `Effort: ${exam.effort}/10`,
+      exam.notes || '',
+    ].filter(Boolean).join('\n'),
     ...(dt.room ? { location: dt.room } : {}),
   });
 
@@ -148,52 +191,11 @@ export function getFilteredEvents(exams, datePicks) {
 }
 
 export function generateFilteredICS(exams, datePicks) {
-  const events = getFilteredEvents(exams, datePicks);
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Sessionly//IT',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-  ];
-
-  for (const { exam, comp, dt } of events) {
-    const uid = `${exam.id}-${comp.name.replace(/\s/g, '')}-${dt.id}@sessionly`;
-    const hasTime = !!dt.time;
-    const dtStart = icsDateTime(dt.date, dt.time);
-    const dtEnd = icsDateTimeEnd(dt.date, dt.time);
-    const summary = escapeICS(`${exam.name} — ${comp.name}${dt.locked ? ' 🔒' : ''}`);
-    const description = escapeICS(
-      `${exam.name} · ${comp.name}\nPriorità: ${exam.priority}\nDifficoltà: ${exam.difficulty}/10\nEffort: ${exam.effort}/10${exam.notes ? '\n\n' + exam.notes : ''}`
-    );
-
-    lines.push(
-      'BEGIN:VEVENT',
-      `UID:${uid}`,
-      `SUMMARY:${summary}`,
-      hasTime ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
-      hasTime ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`,
-      dt.room ? `LOCATION:${escapeICS(dt.room)}` : '',
-      `DESCRIPTION:${description}`,
-      'END:VEVENT',
-    ).filter(Boolean);
-  }
-
-  lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
+  return buildICS(getFilteredEvents(exams, datePicks));
 }
 
 export function downloadFilteredICS(exams, datePicks) {
-  const content = generateFilteredICS(exams, datePicks);
-  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'sessionly.ics';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  triggerDownload(generateFilteredICS(exams, datePicks), 'sessionly.ics');
 }
 
 export function formatShortDate(date) {
