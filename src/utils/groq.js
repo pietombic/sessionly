@@ -367,6 +367,7 @@ export async function extractExamsFromImages(images) {
 
   const prompt = `Queste sono ${n} immagin${n === 1 ? 'e' : 'i'} di screenshot del calendario esami universitari italiani, potenzialmente dello stesso calendario visto in pagine o sezioni diverse.
 
+═══ FASE 1 — ESTRAZIONE ═══
 Ragiona su TUTTE le immagini insieme:
 - Se lo stesso esame appare in più screenshot, unisci le informazioni — non duplicarlo.
 - Se l'intestazione del mese manca in uno screenshot, usa il contesto delle altre immagini per dedurre le date corrette.
@@ -374,10 +375,30 @@ Ragiona su TUTTE le immagini insieme:
 
 Data di oggi: ${today}. Se l'anno non è visibile né deducibile, usa ${currentYear} per date future, ${currentYear + 1} se già passate.
 
-Estrai tutti gli esami unici e restituisci SOLO JSON valido senza markdown:
+═══ FASE 2 — MAPPA LE COMPONENTI ═══
+Il nome della componente nel JSON DEVE essere ESATTAMENTE uno di questi valori canonici:
+  "Scritto" | "Orale" | "Pratico" | "Progetto" | "Discussione" | "Parziale 1" | "Parziale 2"
+
+Regole di mappatura (esempi):
+- "esame scritto", "esame totale", "prova scritta", "scritto LP", "totale LP", qualsiasi variante scritta → "Scritto"
+- "esame orale", "orale LP", "prova orale", qualsiasi variante orale → "Orale"
+- "laboratorio", "lab", "prova pratica" → "Pratico"
+- "1° parziale", "primo parziale", "parziale 1", "I parziale" → "Parziale 1"
+- "2° parziale", "secondo parziale", "parziale 2", "II parziale" → "Parziale 2"
+- "progetto" → "Progetto"
+- "discussione progetto", "discussione" → "Discussione"
+NON usare mai nomi inventati o copiati dallo screenshot. Solo i valori canonici sopra.
+
+═══ FASE 3 — DEDUPLICAZIONE ═══
+Prima di restituire il JSON, ricontrolla l'elenco esami:
+- Nomi simili o abbreviati dello stesso corso DEVONO essere uniti in un unico esame (es. "Calcolo di Probabilità e Statistica" e "Probabilità e Statistica" sono lo stesso esame).
+- Mantieni il nome più completo e unisci tutte le date delle componenti.
+- Verifica che non ci siano date duplicate all'interno della stessa componente.
+
+Restituisci SOLO JSON valido senza markdown:
 {"exams": [
   {
-    "name": "Nome Esame",
+    "name": "Nome Esame completo",
     "tag": "amber|brick|sage|plum|teal|ochre|indigo",
     "components": [
       {
