@@ -2,52 +2,100 @@ import { TAG_CSS } from '../data.js';
 import { startOfDay, formatDueLabel } from '../utils/dates.js';
 import { Dots, LoadBadge, StatusBadge } from './ui/index.jsx';
 
-function ExamCard({ exam, today, selected, planned, onClick }) {
+const DONE_STATUSES = new Set(['done', 'failed', 'saltato']);
+
+function gradeDisplay(exam) {
+  if (exam.status !== 'done') return null;
+  if (exam.gradeLode) return '30L';
+  if (exam.grade != null) return String(exam.grade);
+  return null;
+}
+
+function getEffectiveDate(exam, datePicks, today) {
+  const tod = startOfDay(today);
+  // Prefer the soonest AI-picked date for this exam (upcoming only)
+  const picks = datePicks.filter((p) => p.examId === exam.id && p.date >= tod);
+  if (picks.length > 0) {
+    return picks.sort((a, b) => a.date - b.date)[0].date;
+  }
+  // Fall back to soonest component date
   const allDates = exam.components.flatMap((c) =>
-    c.dates.map((d) => ({ ...d, component: c.name }))
+    c.dates.map((d) => ({ ...d }))
   );
   const upcoming = allDates
-    .filter((d) => d.date && d.date >= startOfDay(today))
+    .filter((d) => d.date && d.date >= tod)
     .sort((a, b) => a.date - b.date)[0];
+  return upcoming?.date ?? null;
+}
 
-  const due = upcoming
-    ? formatDueLabel(upcoming.date, today)
+function ExamCard({ exam, today, selected, planned, datePicks, onClick }) {
+  const effDate = getEffectiveDate(exam, datePicks, today);
+  const due = effDate
+    ? formatDueLabel(effDate, today)
     : { text: 'nessuna data', urgent: false };
+
+  const grade = gradeDisplay(exam);
+  const isDone = DONE_STATUSES.has(exam.status);
 
   return (
     <div
-      className={`exam-card ${selected ? 'selected' : ''} ${!planned ? 'unplanned' : ''}`}
+      className={`exam-card ${selected ? 'selected' : ''} ${!planned && !isDone ? 'unplanned' : ''} ${isDone ? 'done' : ''}`}
       style={{ '--tag': TAG_CSS[exam.tag] }}
       onClick={onClick}
     >
       <span className="tag-bar" />
+      {grade && <span className="exam-grade">{grade}</span>}
       <div className="row1">
         <h3>{exam.name}</h3>
-        <span className={`due ${due.urgent ? 'urgent' : ''}`}>
-          {upcoming?.locked ? '🔒 ' : ''}
-          <strong>{due.text}</strong>
-        </span>
+        {!isDone && (
+          <span className={`due ${due.urgent ? 'urgent' : ''}`}>
+            <strong>{due.text}</strong>
+          </span>
+        )}
+        {isDone && exam.status === 'failed' && (
+          <span className="due" style={{ color: 'var(--warn)' }}>Non superato</span>
+        )}
+        {isDone && exam.status === 'saltato' && (
+          <span className="due">Saltato</span>
+        )}
       </div>
-      <div className="meta">
-        <span className="metric">
-          <span className="lbl">Eff</span>
-          <Dots value={exam.effort} variant="accent" />
-        </span>
-        <span className="metric">
-          <span className="lbl">Diff</span>
-          <Dots value={exam.difficulty} variant={exam.difficulty >= 8 ? 'warn' : ''} />
-        </span>
-      </div>
+      {!isDone && (
+        <div className="meta">
+          <span className="metric">
+            <span className="lbl">Eff</span>
+            <Dots value={exam.effort} variant="accent" />
+          </span>
+          <span className="metric">
+            <span className="lbl">Diff</span>
+            <Dots value={exam.difficulty} variant={exam.difficulty >= 8 ? 'warn' : ''} />
+          </span>
+        </div>
+      )}
       <div className="footer">
         <StatusBadge status={exam.status} />
-        <LoadBadge effort={exam.effort} difficulty={exam.difficulty} />
+        {!isDone && <LoadBadge effort={exam.effort} difficulty={exam.difficulty} />}
       </div>
     </div>
   );
 }
 
-export function Sidebar({ exams, studyWindows = [], today, selectedId, onSelect, onAdd, onImportImage, onHelp }) {
+export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selectedId, onSelect, onAdd, onImportImage, onHelp }) {
   const plannedIds = new Set(studyWindows.map((w) => w.examId));
+
+  const activeExams = exams
+    .filter((e) => !DONE_STATUSES.has(e.status))
+    .slice()
+    .sort((a, b) => {
+      const da = getEffectiveDate(a, datePicks, today);
+      const db = getEffectiveDate(b, datePicks, today);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da - db;
+    });
+
+  const doneExams = exams.filter((e) => DONE_STATUSES.has(e.status));
+
   return (
     <aside className="sidebar">
       <div className="sidebar-hd">
@@ -100,20 +148,41 @@ export function Sidebar({ exams, studyWindows = [], today, selectedId, onSelect,
         </div>
       ) : (
         <div className="exam-list scroll">
-          {exams.map((e) => (
+          {activeExams.map((e) => (
             <ExamCard
               key={e.id}
               exam={e}
               today={today}
               selected={selectedId === e.id}
               planned={plannedIds.has(e.id)}
+              datePicks={datePicks}
               onClick={() => onSelect(e.id)}
             />
           ))}
-          {studyWindows.length === 0 && exams.length > 0 && (
+
+          {studyWindows.length === 0 && activeExams.length > 0 && doneExams.length === 0 && (
             <div className="sidebar-plan-hint">
               Premi <strong>Piano AI</strong> per pianificare gli esami
             </div>
+          )}
+
+          {doneExams.length > 0 && (
+            <>
+              <div className="done-separator">
+                <span>Completati</span>
+              </div>
+              {doneExams.map((e) => (
+                <ExamCard
+                  key={e.id}
+                  exam={e}
+                  today={today}
+                  selected={selectedId === e.id}
+                  planned={plannedIds.has(e.id)}
+                  datePicks={datePicks}
+                  onClick={() => onSelect(e.id)}
+                />
+              ))}
+            </>
           )}
         </div>
       )}

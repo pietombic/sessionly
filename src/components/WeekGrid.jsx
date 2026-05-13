@@ -96,7 +96,7 @@ function assignColumns(items) {
   });
 }
 
-export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete }) {
+export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete, onRemoveStudyWindow }) {
   const scrollRef = useRef(null);
 
   const cells = useMemo(() =>
@@ -297,6 +297,12 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
                         {st.exam.name}
                       </span>
                       <span className="tg-event-time">{st.label}</span>
+                      <button
+                        className="study-remove-btn"
+                        onClick={(e) => { e.stopPropagation(); onRemoveStudyWindow?.(st.id); }}
+                        title="Rimuovi sessione"
+                        aria-label="Rimuovi sessione di studio"
+                      >×</button>
                     </div>
                   );
                 })}

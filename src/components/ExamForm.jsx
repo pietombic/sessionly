@@ -24,6 +24,8 @@ const blank = {
   difficulty: 5,
   priority: 'media',
   status: 'todo',
+  grade: null,
+  gradeLode: false,
   notes: '',
   partial1Done: false,
   partial1Grade: 18,
@@ -266,7 +268,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
 
           {/* ── basics ─────────────────────────────── */}
           <div className="col" style={{ gap: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+            <div className="name-code-grid">
               <div className="field">
                 <label className="field-label">Nome esame</label>
                 <input
@@ -593,13 +595,53 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                   <span>○</span> Saltato
                 </button>
               </div>
+
+              {draft.status === 'done' && (
+                <div className="grade-row">
+                  <span className="grade-label">Voto</span>
+                  <input
+                    type="number"
+                    className="grade-input"
+                    min={18}
+                    max={30}
+                    disabled={draft.gradeLode}
+                    value={draft.gradeLode ? 30 : (draft.grade ?? '')}
+                    onChange={(e) => set({ grade: e.target.value ? Math.min(30, Math.max(18, Number(e.target.value))) : null })}
+                    placeholder="18–30"
+                  />
+                  <label className="grade-lode">
+                    <input
+                      type="checkbox"
+                      checked={!!draft.gradeLode}
+                      onChange={(e) => set({ gradeLode: e.target.checked, grade: e.target.checked ? 30 : draft.grade })}
+                    />
+                    <span>cum laude</span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
+          {/* delete button — shown inside body on mobile, hidden on desktop */}
+          {isEditing && (
+            <div className="modal-delete-mobile">
+              {!confirmDelete ? (
+                <button className="btn danger" style={{ width: '100%' }} onClick={() => setConfirmDelete(true)}>
+                  Elimina esame
+                </button>
+              ) : (
+                <div className="delete-confirm-row">
+                  <span className="delete-confirm-text">Sicuro?</span>
+                  <button className="btn danger" onClick={() => onDelete(initial.id)}>Sì, elimina</button>
+                  <button className="btn ghost" style={{ padding: '7px 12px' }} onClick={() => setConfirmDelete(false)}>Annulla</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="modal-ft">
-          <div>
+          <div className="modal-delete-desktop">
             {isEditing && !confirmDelete && (
               <button className="btn danger" onClick={() => setConfirmDelete(true)}>
                 Elimina esame

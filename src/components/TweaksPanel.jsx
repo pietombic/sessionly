@@ -4,38 +4,44 @@ import { getGroqKey } from '../utils/groq.js';
 const STYLE = `
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
     max-height:calc(100vh - 32px);display:flex;flex-direction:column;
-    background:rgba(250,249,247,.82);color:#29261b;
+    background:color-mix(in srgb,var(--paper) 87%,transparent);
+    color:var(--ink);
     -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
-    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
-    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    border:.5px solid color-mix(in srgb,var(--ink) 12%,transparent);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.22);
     font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
   .twk-hd{display:flex;align-items:center;justify-content:space-between;
-    padding:10px 8px 10px 14px;cursor:move;user-select:none;border-bottom:.5px solid rgba(0,0,0,.06)}
+    padding:10px 8px 10px 14px;cursor:move;user-select:none;
+    border-bottom:.5px solid color-mix(in srgb,var(--ink) 8%,transparent)}
   .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
-  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+  .twk-x{appearance:none;border:0;background:transparent;
+    color:color-mix(in srgb,var(--ink) 55%,transparent);
     width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1;
     display:grid;place-items:center}
-  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-x:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
   .twk-body{padding:8px 14px 14px;display:flex;flex-direction:column;gap:10px;
     overflow-y:auto;overflow-x:hidden;min-height:0;
-    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+    scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 15%,transparent) transparent}
   .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
-    color:rgba(41,38,27,.45);padding:8px 0 0;margin:0}
+    color:color-mix(in srgb,var(--ink) 45%,transparent);padding:8px 0 0;margin:0}
   .twk-sect:first-child{padding-top:0}
   .twk-row{display:flex;flex-direction:column;gap:5px}
   .twk-row-h{flex-direction:row!important;align-items:center;justify-content:space-between;gap:10px}
-  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;color:rgba(41,38,27,.72)}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:color-mix(in srgb,var(--ink) 72%,transparent)}
   .twk-lbl>span:first-child{font-weight:500}
   .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
-    background:rgba(0,0,0,.06);user-select:none}
+    background:color-mix(in srgb,var(--ink) 7%,transparent);user-select:none}
   .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
-    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    background:color-mix(in srgb,var(--paper) 95%,transparent);
+    box-shadow:0 1px 2px rgba(0,0,0,.15);
     transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
   .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
     background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
     border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2}
   .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
-    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0;flex-shrink:0}
+    background:color-mix(in srgb,var(--ink) 18%,transparent);
+    transition:background .15s;cursor:default;padding:0;flex-shrink:0}
   .twk-toggle[data-on="1"]{background:#34c759}
   .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
     background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
@@ -46,7 +52,7 @@ const STYLE = `
     box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
     transition:transform .12s,box-shadow .12s}
   .twk-chip:hover{transform:translateY(-1px);box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.12)}
-  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px rgba(0,0,0,.85),0 2px 6px rgba(0,0,0,.15)}
+  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--ink) 85%,transparent),0 2px 6px rgba(0,0,0,.15)}
   .twk-chip>span.swatches{position:absolute;top:0;bottom:0;right:0;width:34%;
     display:flex;flex-direction:column;box-shadow:-1px 0 0 rgba(0,0,0,.1)}
   .twk-chip>span.swatches>i{flex:1;box-shadow:0 -1px 0 rgba(0,0,0,.1)}
@@ -54,6 +60,13 @@ const STYLE = `
   .twk-chip .chip-label{position:absolute;left:6px;bottom:4px;font-family:monospace;
     font-size:9px;letter-spacing:.05em;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);
     text-transform:uppercase}
+  .twk-groq-btn{appearance:none;border:1px solid color-mix(in srgb,var(--ink) 18%,transparent);
+    background:color-mix(in srgb,var(--paper) 60%,transparent);border-radius:5px;
+    padding:5px 10px;font-size:11px;font-family:inherit;cursor:default;
+    color:color-mix(in srgb,var(--ink) 80%,transparent);margin-top:4px}
+  .twk-groq-btn:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+  .twk-groq-dim{font-size:10px;color:color-mix(in srgb,var(--ink) 40%,transparent)}
+  .twk-groq-ok{font-size:10px;color:#34c759}
 `;
 
 function TweakSection({ label }) {
@@ -205,8 +218,7 @@ export function TweaksPanel({ tweaks, onTweak, onGroqKey }) {
     <>
       {/* Gear button in the app — rendered outside the panel */}
       <button
-        className="icon-btn"
-        style={{ position: 'fixed', top: 16, right: 16, zIndex: 100 }}
+        className="icon-btn twk-gear-btn"
         onClick={() => setOpen((v) => !v)}
         title="Impostazioni aspetto"
         aria-label="Apri pannello tweaks"
@@ -282,31 +294,14 @@ export function TweaksPanel({ tweaks, onTweak, onGroqKey }) {
               <div className="twk-row">
                 <div className="twk-lbl">
                   <span>Chiave Groq</span>
-                  <span style={{ fontSize: 10, color: getGroqKey() ? '#34c759' : 'rgba(41,38,27,.4)' }}>
+                  <span className={getGroqKey() ? 'twk-groq-ok' : 'twk-groq-dim'}>
                     {getGroqKey() ? '● Configurata' : '● Non configurata'}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  style={{
-                    appearance: 'none', border: '1px solid rgba(0,0,0,.15)',
-                    background: 'rgba(255,255,255,.5)', borderRadius: 5,
-                    padding: '5px 10px', fontSize: 11, fontFamily: 'inherit',
-                    cursor: 'default', color: 'rgba(41,38,27,.8)',
-                    marginTop: 4,
-                  }}
-                  onClick={onGroqKey}
-                >
+                <button type="button" className="twk-groq-btn" onClick={onGroqKey}>
                   {getGroqKey() ? 'Modifica chiave' : 'Aggiungi chiave'}
                 </button>
               </div>
-
-              <TweakSection label="Stato" />
-              <TweakToggle
-                label="Mostra onboarding"
-                value={tweaks.showOnboarding}
-                onChange={(v) => onTweak('showOnboarding', v)}
-              />
             </div>
           </div>
         </>

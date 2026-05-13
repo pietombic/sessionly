@@ -104,6 +104,11 @@ export async function removeStudyWindowsForExam(examId) {
   if (error) throw error;
 }
 
+export async function removeStudyWindow(windowId) {
+  const { error } = await supabase.from('study_windows').delete().eq('id', windowId);
+  if (error) throw error;
+}
+
 export async function updateStudyWindowComplete(windowId, completed) {
   const { error } = await supabase
     .from('study_windows')

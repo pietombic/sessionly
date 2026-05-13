@@ -162,7 +162,7 @@ button {
 
 /* Pretty native scrollbars in panels */
 .scroll {
-  overflow-y: auto;
+  overflow-y: scroll;
   scrollbar-width: thin;
   scrollbar-color: var(--rule-strong) transparent;
 }
@@ -187,8 +187,10 @@ button {
 .app {
   position: relative;
   height: 100vh;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 320px 1fr;
+  grid-template-rows: 1fr;
   background: var(--paper);
   z-index: 2;
 }
@@ -208,6 +210,8 @@ button {
   position: relative;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   background: var(--paper-2);
   border-right: 1px solid var(--rule);
   z-index: 3;
@@ -300,10 +304,12 @@ button {
 
 .exam-list {
   flex: 1;
+  min-height: 0;
   padding: 4px 14px 24px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
 }
 
 /* ───────────────────────────────────────── exam card */
@@ -316,7 +322,6 @@ button {
   padding: 14px 14px 12px 18px;
   cursor: pointer;
   transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-  overflow: hidden;
 }
 
 .exam-card:hover {
@@ -447,6 +452,54 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.exam-card.done {
+  opacity: 0.72;
+}
+
+.exam-card.done:hover,
+.exam-card.done.selected {
+  opacity: 1;
+}
+
+.exam-card.done .tag-bar {
+  background: var(--rule-strong);
+}
+
+.exam-grade {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--serif);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: color-mix(in oklch, var(--ink) 12%, transparent);
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+}
+
+.done-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.done-separator::before,
+.done-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
 }
 
 /* ───────────────────────────────────────── badges */
@@ -670,6 +723,13 @@ button {
   display: block;
 }
 
+.twk-gear-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 100;
+}
+
 /* ───────────────────────────────────────── calendar grid */
 
 .cal-wrap {
@@ -871,6 +931,39 @@ html[data-dark="1"] .study {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.7;
+}
+
+.study-remove-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 1;
+  color: currentColor;
+  opacity: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 2px;
+  transition: opacity .12s;
+}
+
+.study:hover .study-remove-btn {
+  opacity: 0.55;
+}
+
+.study-remove-btn:hover {
+  opacity: 1 !important;
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+/* Always show remove btn on touch devices */
+@media (hover: none) {
+  .study-remove-btn {
+    opacity: 0.45;
+  }
 }
 
 /* Alternative study block styles */
@@ -2291,11 +2384,22 @@ textarea.input {
   background: var(--paper);
   min-width: 0;
 }
-.week-tg-col:last-child { border-right: none; }
 
-.week-tg-col.weekend { background: color-mix(in oklch, var(--paper) 90%, var(--paper-2)); }
-.week-tg-col.today   { background: color-mix(in oklch, var(--paper) 80%, var(--accent) 6%); }
-.week-tg-col.conflict { background: color-mix(in oklch, var(--paper) 82%, var(--warn) 10%); }
+.week-tg-col:last-child {
+  border-right: none;
+}
+
+.week-tg-col.weekend {
+  background: color-mix(in oklch, var(--paper) 90%, var(--paper-2));
+}
+
+.week-tg-col.today {
+  background: color-mix(in oklch, var(--paper) 80%, var(--accent) 6%);
+}
+
+.week-tg-col.conflict {
+  background: color-mix(in oklch, var(--paper) 82%, var(--warn) 10%);
+}
 
 .week-tg-hline {
   position: absolute;
@@ -2305,6 +2409,7 @@ textarea.input {
   background: var(--rule);
   pointer-events: none;
 }
+
 .week-tg-hline.half {
   background: color-mix(in oklch, var(--rule) 50%, transparent);
 }
@@ -2319,6 +2424,7 @@ textarea.input {
   pointer-events: none;
   border-radius: 1px;
 }
+
 .week-tg-now::before {
   content: '';
   position: absolute;
@@ -2343,7 +2449,11 @@ textarea.input {
   transition: opacity .12s ease, filter .12s ease;
   box-sizing: border-box;
 }
-.week-tg-event:hover { filter: brightness(1.08); z-index: 3; }
+
+.week-tg-event:hover {
+  filter: brightness(1.08);
+  z-index: 3;
+}
 
 .week-tg-event.chip {
   background: var(--tag, var(--accent));
@@ -2356,6 +2466,14 @@ textarea.input {
   border: 1.5px solid color-mix(in oklch, var(--tag, var(--accent)) 55%, transparent);
   color: var(--ink);
 }
+
+.week-tg-event.study .study-remove-btn {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  margin: 0;
+}
+
 .week-tg-event.study.study-done {
   opacity: 0.45;
 }
@@ -2512,6 +2630,72 @@ textarea.input {
   border-color: var(--ink-soft);
   color: var(--ink-soft);
   border-width: 2px;
+}
+
+/* Grade input row */
+.grade-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.grade-label {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--sans);
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.grade-input {
+  width: 68px;
+  border: 1.5px solid var(--rule-strong);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+  padding: 6px 8px;
+  border-radius: 5px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.grade-input::-webkit-inner-spin-button,
+.grade-input::-webkit-outer-spin-button {
+  appearance: none;
+}
+
+.grade-input:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.grade-input:disabled {
+  opacity: 0.45;
+}
+
+.grade-lode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-family: var(--sans);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.grade-lode input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--ink);
+  cursor: pointer;
 }
 
 /* Status badges for new statuses */
@@ -3056,6 +3240,173 @@ textarea.input {
   border-color: var(--ink);
 }
 
+/* ───────────────────────────────────────── Pomodoro full-screen view */
+
+.pom-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 40px;
+  background: var(--paper);
+}
+
+.pom-view.pom-break {
+  background: color-mix(in oklch, var(--paper) 90%, #6b8e6f 4%);
+}
+
+.pom-view-mode-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.pom-view-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.pom-view-action-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 4px 2px;
+  transition: color .12s ease;
+}
+
+.pom-view-action-btn:hover {
+  color: var(--ink);
+}
+
+.pom-view-action-sep {
+  color: var(--rule-strong);
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+
+.pom-view-ring-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pom-view-svg {
+  width: 220px;
+  height: 220px;
+}
+
+.pom-view-time {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 46px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.pom-view-controls {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.pom-view-play {
+  appearance: none;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: none;
+  background: var(--ink);
+  color: var(--paper);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform .1s ease, box-shadow .1s ease;
+  box-shadow: 0 4px 16px var(--shadow-2);
+}
+
+.pom-view-play:hover {
+  transform: scale(1.06);
+  box-shadow: 0 6px 20px var(--shadow-2);
+}
+
+.pom-view-ctrl {
+  appearance: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rule-strong);
+  background: var(--paper-2);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background .1s ease, transform .1s ease;
+}
+
+.pom-view-ctrl:hover {
+  background: var(--paper);
+  transform: scale(1.04);
+}
+
+.pom-view-sessions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pom-dot-lg {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.pom-view-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 360px;
+  padding: 24px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+/* name/code grid */
+.name-code-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+
+/* delete button visibility control */
+.modal-delete-mobile {
+  display: none;
+}
+
+.modal-delete-desktop {
+  display: contents;
+}
+
 /* ───────────────────────────────────────── Import from image modal */
 
 .modal-import {
@@ -3149,6 +3500,7 @@ textarea.input {
 .import-thumb-done {
   border-color: color-mix(in oklch, var(--accent) 70%, transparent);
 }
+
 .import-thumb-done .import-thumb-overlay {
   background: color-mix(in oklch, var(--accent) 20%, transparent);
   color: var(--accent-deep);
@@ -3157,6 +3509,7 @@ textarea.input {
 .import-thumb-error {
   border-color: color-mix(in oklch, var(--warn) 60%, transparent);
 }
+
 .import-thumb-error .import-thumb-overlay {
   background: color-mix(in oklch, var(--warn) 15%, transparent);
   color: var(--warn);
@@ -3691,4 +4044,342 @@ textarea.input {
 
 .help-footer a:hover {
   color: var(--ink);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE  (≤ 768 px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Tab bar hidden on desktop */
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    height: calc(100dvh - 58px);
+  }
+
+  /* Both panels in the same cell; tab control shows one at a time */
+  .sidebar,
+  .main {
+    grid-row: 1;
+    grid-column: 1;
+    min-height: 0;
+  }
+
+  .app[data-mobile-tab="calendar"] .sidebar {
+    display: none;
+  }
+
+  .app[data-mobile-tab="list"] .main {
+    display: none;
+  }
+
+  /* ── Bottom tab bar ───────────────────────────────────────────────────── */
+
+  .mobile-tabbar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 58px;
+    z-index: 90;
+    background: color-mix(in srgb, var(--paper-2) 92%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    backdrop-filter: blur(20px) saturate(160%);
+    border-top: 1px solid var(--rule);
+    /* iPhone safe area */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .mobile-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--ink-soft);
+    font-family: var(--sans);
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    transition: color .15s ease, transform .1s ease;
+    padding-top: 6px;
+  }
+
+  .mobile-tab.active {
+    color: var(--ink);
+  }
+
+  .mobile-tab.active svg {
+    stroke: var(--accent);
+  }
+
+  .mobile-tab:active {
+    transform: scale(0.92);
+  }
+
+  /* ── Sidebar adjustments ─────────────────────────────────────────────── */
+
+  .sidebar {
+    border-right: none;
+  }
+
+  .sidebar-hd {
+    padding: 16px 18px 10px;
+  }
+
+  .sidebar-toolbar {
+    padding: 10px 18px 10px;
+  }
+
+  .exam-list {
+    padding: 4px 14px 24px;
+    height: auto;
+    flex: 1;
+  }
+
+  .sidebar-footer {
+    padding: 10px 18px;
+  }
+
+  /* ── Main header ─────────────────────────────────────────────────────── */
+
+  .main-hd {
+    padding: 14px 18px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .main-hd .titles h1 {
+    font-size: 24px;
+  }
+
+  .main-hd .titles .sub {
+    display: none;
+  }
+
+  .main-hd-actions {
+    width: 100%;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .ai-btn {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+
+  .export-btn {
+    font-size: 11.5px;
+  }
+
+  .remove-plan-btn,
+  .show-all-btn {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  /* ── Calendar grid ───────────────────────────────────────────────────── */
+
+  .cal-wrap {
+    padding: 6px 10px 16px;
+  }
+
+  .cal-weekrow .wd {
+    padding: 6px 2px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .cell {
+    padding: 4px 4px 3px;
+  }
+
+  .daynum {
+    font-size: 10px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .chip {
+    font-size: 9.5px;
+    padding: 2px 4px 2px 7px;
+    border-left-width: 2px;
+    gap: 3px;
+  }
+
+  .chip .ctype {
+    display: none;
+  }
+
+  .study {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+
+  /* ── Study timeline ──────────────────────────────────────────────────── */
+
+  .study-timeline-wrap {
+    padding: 0 14px;
+  }
+
+  /* ── Modals — bottom sheet ───────────────────────────────────────────── */
+
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 80dvh;
+    margin-bottom: 80px;
+    border-radius: 16px 16px 0 0;
+    animation: slideUpModal .25s cubic-bezier(.2, .8, .2, 1);
+  }
+
+  @keyframes slideUpModal {
+    from {
+      transform: translateY(32px);
+      opacity: 0;
+    }
+  }
+
+  .modal-hd {
+    padding: 18px 20px 12px;
+  }
+
+  .modal-body {
+    padding: 16px 20px 20px;
+  }
+
+  .modal-ft {
+    padding: 12px 20px;
+  }
+
+  /* ── Help modal ──────────────────────────────────────────────────────── */
+
+  .help-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* ── Error banners ───────────────────────────────────────────────────── */
+
+  .ai-error {
+    margin: 10px 14px 0 !important;
+  }
+
+  /* ── Pomodoro FAB & TweaksPanel ──────────────────────────────────────── */
+
+  .pomodoro-wrap {
+    display: none;
+  }
+
+  .twk-gear-btn {
+    top: auto !important;
+    bottom: 68px !important;
+    right: 16px !important;
+  }
+
+  /* ── Pomodoro full-screen view ───────────────────────────────────────── */
+
+  .pom-view {
+    padding: 24px 20px;
+    gap: 20px;
+  }
+
+  .pom-view-svg {
+    width: 180px;
+    height: 180px;
+  }
+
+  .pom-view-time {
+    font-size: 38px;
+  }
+
+  .pom-view-play {
+    width: 60px;
+    height: 60px;
+  }
+
+  .pom-view-ctrl {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* ── ExamForm mobile ─────────────────────────────────────────────────── */
+
+  /* Name and code stack vertically */
+  .name-code-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Date row wraps to two lines */
+  .date-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  /* date input fills first cell, time fills second */
+  .date-row input[type="date"] {
+    grid-column: 1;
+  }
+
+  .date-row input[type="time"] {
+    grid-column: 2;
+  }
+
+  /* room input spans full width on second row */
+  .date-row input:not([type="date"]):not([type="time"]) {
+    grid-column: 1 / -1;
+  }
+
+  /* lock and remove buttons share second row */
+  .date-row .toggle-lock {
+    grid-column: 1;
+  }
+
+  .date-row .icon-x {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  /* Sliders stack vertically */
+  .slider-row {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* Delete button shown in body, hidden in footer */
+  .modal-delete-mobile {
+    display: block;
+  }
+
+  .modal-delete-desktop {
+    display: none;
+  }
+
+  /* Priority/status grid goes single column */
+  .modal-body>div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Pages/PDF grid goes single column */
+  .program-details-body>div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
 }

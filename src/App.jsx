@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './lib/supabase.js';
 import {
   fetchExams, upsertExam, removeExam,
-  fetchStudyWindows, replaceStudyWindows, removeStudyWindowsForExam,
+  fetchStudyWindows, replaceStudyWindows, removeStudyWindowsForExam, removeStudyWindow,
   fetchDatePicks, replaceDatePicks, removeDatePicksForExam,
   updateStudyWindowComplete, clearPlan,
 } from './lib/db.js';
@@ -20,7 +20,7 @@ import { LandingScreen } from './components/LandingScreen.jsx';
 import { GroqKeyModal } from './components/GroqKeyModal.jsx';
 import { AIPlanModal } from './components/AIPlanModal.jsx';
 import { StudyTimeline } from './components/StudyTimeline.jsx';
-import { PomodoroTimer } from './components/PomodoroTimer.jsx';
+import { usePomodoroTimer, PomodoroFab, PomodoroView } from './components/PomodoroTimer.jsx';
 import { ImageImportModal } from './components/ImageImportModal.jsx';
 import { HelpModal } from './components/HelpModal.jsx';
 
@@ -32,7 +32,6 @@ const TWEAK_DEFAULTS = {
   studyStyle: 'tratteggio',
   sliderStyle: 'ticks',
   dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
-  showOnboarding: false,
 };
 
 function loadTweaks() {
@@ -113,7 +112,10 @@ export default function App() {
   const [year, setYear] = useState(TODAY.getFullYear());
   const [month, setMonth] = useState(TODAY.getMonth());
   const [weekStart, setWeekStart] = useState(() => getWeekStart(TODAY));
+  const pom = usePomodoroTimer();
+  const [pomodoroOpen, setPomodoroOpen] = useState(false);
   const [view, setView] = useState('month');
+  const [mobileTab, setMobileTab] = useState('calendar');
   const [selectedId, setSelectedId] = useState(null);
   const [modal, setModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
@@ -196,7 +198,6 @@ export default function App() {
       setExams((prev) => [...prev, savedExam]);
     }
     setModal(null);
-    setTweak('showOnboarding', false);
 
     try {
       await upsertExam(savedExam, user.id);
@@ -301,11 +302,20 @@ export default function App() {
     }
   };
 
+  const handleRemoveStudyWindow = async (windowId) => {
+    if (!windowId) return;
+    setStudyWindows((prev) => prev.filter((w) => w.id !== windowId));
+    try {
+      await removeStudyWindow(windowId);
+    } catch (err) {
+      setSaveError(`Errore rimozione sessione: ${err.message}`);
+    }
+  };
+
   const handleImportExams = async (drafts) => {
     setShowImageImport(false);
     const newExams = drafts.map((d) => ({ ...d, id: 'ex_' + Date.now() + '_' + Math.random().toString(36).slice(2) }));
     setExams((prev) => [...prev, ...newExams]);
-    setTweak('showOnboarding', false);
     try {
       await Promise.all(newExams.map((e) => upsertExam(e, user.id)));
     } catch (err) {
@@ -361,17 +371,15 @@ export default function App() {
 
   if (dataLoading && exams.length === 0) return <AppLoading />;
 
-  const visibleExams = tweaks.showOnboarding ? [] : exams;
-  const visibleStudy = tweaks.showOnboarding ? [] : studyWindows;
-  const visiblePicks = tweaks.showOnboarding ? [] : datePicks;
   const initial = modal?.mode === 'edit' ? exams.find((e) => e.id === modal.id) : null;
-  const hasPlan = visiblePicks.length > 0;
+  const hasPlan = datePicks.length > 0;
 
   return (
-    <div className="app">
+    <div className="app" data-mobile-tab={mobileTab}>
       <Sidebar
-        exams={visibleExams}
-        studyWindows={visibleStudy}
+        exams={exams}
+        studyWindows={studyWindows}
+        datePicks={datePicks}
         today={TODAY}
         selectedId={selectedId}
         onSelect={openEdit}
@@ -422,35 +430,43 @@ export default function App() {
           </div>
         )}
 
-        <StudyTimeline exams={visibleExams} datePicks={visiblePicks} today={TODAY} />
-
-        {tweaks.showOnboarding || exams.length === 0 ? (
-          <EmptyState onAdd={() => setModal({ mode: 'new' })} />
-        ) : view === 'week' ? (
-          <WeekGrid
-            weekStart={weekStart}
-            exams={visibleExams}
-            studyWindows={visibleStudy}
-            datePicks={visiblePicks}
-            showAllDates={showAllDates}
-            today={TODAY}
-            studyStyle={tweaks.studyStyle}
-            onSelectExam={openEdit}
-            onToggleStudyComplete={handleToggleStudyComplete}
-          />
+        {pomodoroOpen ? (
+          <PomodoroView pom={pom} onClose={() => setPomodoroOpen(false)} />
         ) : (
-          <CalendarGrid
-            year={year}
-            month={month}
-            exams={visibleExams}
-            studyWindows={visibleStudy}
-            datePicks={visiblePicks}
-            showAllDates={showAllDates}
-            today={TODAY}
-            studyStyle={tweaks.studyStyle}
-            onSelectExam={openEdit}
-            onToggleStudyComplete={handleToggleStudyComplete}
-          />
+          <>
+            <StudyTimeline exams={exams} datePicks={datePicks} today={TODAY} />
+
+            {exams.length === 0 ? (
+              <EmptyState onAdd={() => setModal({ mode: 'new' })} />
+            ) : view === 'week' ? (
+              <WeekGrid
+                weekStart={weekStart}
+                exams={exams}
+                studyWindows={studyWindows}
+                datePicks={datePicks}
+                showAllDates={showAllDates}
+                today={TODAY}
+                studyStyle={tweaks.studyStyle}
+                onSelectExam={openEdit}
+                onToggleStudyComplete={handleToggleStudyComplete}
+                onRemoveStudyWindow={handleRemoveStudyWindow}
+              />
+            ) : (
+              <CalendarGrid
+                year={year}
+                month={month}
+                exams={exams}
+                studyWindows={studyWindows}
+                datePicks={datePicks}
+                showAllDates={showAllDates}
+                today={TODAY}
+                studyStyle={tweaks.studyStyle}
+                onSelectExam={openEdit}
+                onToggleStudyComplete={handleToggleStudyComplete}
+                onRemoveStudyWindow={handleRemoveStudyWindow}
+              />
+            )}
+          </>
         )}
       </main>
 
@@ -469,7 +485,7 @@ export default function App() {
       {showExport && (
         <CalendarExportModal
           exams={exams}
-          datePicks={visiblePicks}
+          datePicks={datePicks}
           onClose={() => setShowExport(false)}
         />
       )}
@@ -509,7 +525,50 @@ export default function App() {
       }} />}
 
       <TweaksPanel tweaks={tweaks} onTweak={setTweak} onGroqKey={() => setShowGroqKeyModal(true)} />
-      <PomodoroTimer />
+      {!pomodoroOpen && <PomodoroFab pom={pom} onOpen={() => setPomodoroOpen(true)} />}
+
+      <nav className="mobile-tabbar" aria-label="Navigazione">
+        <button
+          className={`mobile-tab ${mobileTab === 'calendar' && !pomodoroOpen ? 'active' : ''}`}
+          onClick={() => { setMobileTab('calendar'); setPomodoroOpen(false); }}
+          aria-label="Calendario"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <span>Calendario</span>
+        </button>
+        <button
+          className={`mobile-tab ${mobileTab === 'list' && !pomodoroOpen ? 'active' : ''}`}
+          onClick={() => { setMobileTab('list'); setPomodoroOpen(false); }}
+          aria-label="Esami"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="9" y1="6" x2="20" y2="6"/>
+            <line x1="9" y1="12" x2="20" y2="12"/>
+            <line x1="9" y1="18" x2="20" y2="18"/>
+            <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/>
+            <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+            <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+          </svg>
+          <span>Esami</span>
+        </button>
+        <button
+          className={`mobile-tab ${pomodoroOpen ? 'active' : ''}`}
+          onClick={() => { setMobileTab('calendar'); setPomodoroOpen((v) => !v); }}
+          aria-label="Pomodoro"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="13" r="8"/>
+            <polyline points="12 9 12 13 15 13"/>
+            <path d="M9 3h6M12 3v2"/>
+          </svg>
+          <span>Pomodoro</span>
+        </button>
+      </nav>
     </div>
   );
 }

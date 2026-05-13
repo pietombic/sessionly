@@ -128,11 +128,6 @@ export function MonthHeader({
           </button>
         </div>
 
-        <div className="view-toggle">
-          <button className={view === 'month' ? 'on' : ''} onClick={() => onView('month')}>Mese</button>
-          <button className={view === 'week' ? 'on' : ''} onClick={() => onView('week')}>Settimana</button>
-        </div>
-
         {user && <UserMenu user={user} onLogout={onLogout} />}
       </div>
     </div>
