@@ -1,12 +1,9 @@
-import { downloadICS, googleCalendarURL, getAllEvents, formatShortDate } from '../utils/calendarExport.js';
+import { getFilteredEvents, downloadFilteredICS, googleCalendarURL, formatShortDate } from '../utils/calendarExport.js';
 import { TAG_CSS } from '../data.js';
 
-export function CalendarExportModal({ exams, onClose }) {
-  const events = getAllEvents(exams);
-
-  const handleDownloadICS = () => {
-    downloadICS(exams);
-  };
+export function CalendarExportModal({ exams, datePicks = [], onClose }) {
+  const hasPlan = datePicks.length > 0;
+  const events = getFilteredEvents(exams, datePicks);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -14,33 +11,53 @@ export function CalendarExportModal({ exams, onClose }) {
         <div className="modal-hd">
           <div>
             <h2>Esporta Calendario</h2>
-            <div className="sub">Salva gli esami su Apple Calendar o Google Calendar.</div>
+            <div className="sub">
+              {hasPlan
+                ? 'Solo le date scelte dal Piano AI.'
+                : 'Salva gli esami su Apple Calendar o Google Calendar.'}
+            </div>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
         </div>
 
         <div className="modal-body scroll">
+          {hasPlan && (
+            <div style={{
+              padding: '8px 12px',
+              background: 'color-mix(in oklch, var(--paper) 80%, var(--accent) 6%)',
+              border: '1px solid color-mix(in oklch, var(--accent) 30%, transparent)',
+              borderRadius: 4,
+              fontSize: 12,
+              color: 'var(--ink-soft)',
+            }}>
+              ✦ Stai esportando le <strong>{events.length} date</strong> selezionate dal Piano AI.
+              Per esportare tutte le date attiva il toggle "Tutte le date" nel calendario.
+            </div>
+          )}
+
           <div className="export-cards">
-            {/* Apple Calendar */}
             <div className="export-card">
               <div className="export-card-icon">🍎</div>
               <h3>Apple Calendar</h3>
               <p>
-                Scarica un file .ics con tutti gli esami. Aprilo per importarli
+                Scarica un file .ics con gli esami. Aprilo per importarli
                 direttamente in Calendar su Mac o iPhone.
               </p>
-              <button className="btn" onClick={handleDownloadICS} style={{ marginTop: 4 }}>
+              <button
+                className="btn"
+                onClick={() => downloadFilteredICS(exams, datePicks)}
+                style={{ marginTop: 4 }}
+              >
                 Scarica .ics
               </button>
             </div>
 
-            {/* Google Calendar */}
             <div className="export-card">
               <div className="export-card-icon">📅</div>
               <h3>Google Calendar</h3>
               <p>
-                Aggiungi ogni esame singolarmente cliccando il link corrispondente.
-                Si aprirà la pagina di creazione evento pre-compilata.
+                Aggiungi ogni esame singolarmente cliccando il link. Si aprirà
+                la pagina di creazione evento pre-compilata.
               </p>
               <span style={{
                 fontFamily: 'var(--mono)',
@@ -54,7 +71,6 @@ export function CalendarExportModal({ exams, onClose }) {
             </div>
           </div>
 
-          {/* Google Calendar event list */}
           {events.length > 0 && (
             <>
               <div className="export-section-label">Aggiungi a Google Calendar</div>
@@ -75,12 +91,7 @@ export function CalendarExportModal({ exams, onClose }) {
                       </div>
                       <span className="ev-date">{formatShortDate(dt.date)}{dt.time ? ` · ${dt.time}` : ''}</span>
                       {url && (
-                        <a
-                          className="ev-link"
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
+                        <a className="ev-link" href={url} target="_blank" rel="noopener noreferrer">
                           Aggiungi
                         </a>
                       )}
@@ -92,12 +103,7 @@ export function CalendarExportModal({ exams, onClose }) {
           )}
 
           {events.length === 0 && (
-            <div style={{
-              textAlign: 'center',
-              padding: '24px 0',
-              color: 'var(--ink-soft)',
-              fontSize: 13,
-            }}>
+            <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--ink-soft)', fontSize: 13 }}>
               Nessun evento con date inserite.
             </div>
           )}
@@ -106,6 +112,7 @@ export function CalendarExportModal({ exams, onClose }) {
         <div className="modal-ft">
           <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
             {exams.length} {exams.length === 1 ? 'esame' : 'esami'} · {events.length} {events.length === 1 ? 'data' : 'date'}
+            {hasPlan ? ' (piano AI)' : ''}
           </span>
           <button className="btn ghost" onClick={onClose}>Chiudi</button>
         </div>

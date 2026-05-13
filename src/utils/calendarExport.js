@@ -132,6 +132,70 @@ export function getAllEvents(exams) {
   return events.sort((a, b) => a.dt.date - b.dt.date);
 }
 
+function sameDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+export function getFilteredEvents(exams, datePicks) {
+  if (!datePicks || datePicks.length === 0) return getAllEvents(exams);
+  return getAllEvents(exams).filter(({ exam, comp, dt }) =>
+    datePicks.some(
+      (p) => p.examId === exam.id && p.componentName === comp.name && sameDay(p.date, dt.date)
+    )
+  );
+}
+
+export function generateFilteredICS(exams, datePicks) {
+  const events = getFilteredEvents(exams, datePicks);
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Sessionly//IT',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+
+  for (const { exam, comp, dt } of events) {
+    const uid = `${exam.id}-${comp.name.replace(/\s/g, '')}-${dt.id}@sessionly`;
+    const hasTime = !!dt.time;
+    const dtStart = icsDateTime(dt.date, dt.time);
+    const dtEnd = icsDateTimeEnd(dt.date, dt.time);
+    const summary = escapeICS(`${exam.name} — ${comp.name}${dt.locked ? ' 🔒' : ''}`);
+    const description = escapeICS(
+      `${exam.name} · ${comp.name}\nPriorità: ${exam.priority}\nDifficoltà: ${exam.difficulty}/10\nEffort: ${exam.effort}/10${exam.notes ? '\n\n' + exam.notes : ''}`
+    );
+
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `SUMMARY:${summary}`,
+      hasTime ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
+      hasTime ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`,
+      dt.room ? `LOCATION:${escapeICS(dt.room)}` : '',
+      `DESCRIPTION:${description}`,
+      'END:VEVENT',
+    ).filter(Boolean);
+  }
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+export function downloadFilteredICS(exams, datePicks) {
+  const content = generateFilteredICS(exams, datePicks);
+  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sessionly.ics';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export function formatShortDate(date) {
   return `${date.getDate()} ${MONTHS_IT[date.getMonth()].slice(0, 3).toLowerCase()}`;
 }
