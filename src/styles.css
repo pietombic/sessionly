@@ -1868,6 +1868,36 @@ textarea.input {
   text-align: left;
 }
 
+.landing-steps .step {
+  background: color-mix(in srgb, var(--paper-2) 60%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 16px 16px 18px;
+}
+
+.landing-steps .step .num {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+}
+
+.landing-steps .step h4 {
+  font-family: var(--serif);
+  font-size: 15px;
+  margin: 4px 0 6px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.landing-steps .step p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
 /* ───────────────────────────────────────── auth modal */
 
 .auth-modal {
@@ -4380,6 +4410,48 @@ textarea.input {
   /* Pages/PDF grid goes single column */
   .program-details-body>div[style*="grid-template-columns: 1fr 1fr"] {
     grid-template-columns: 1fr !important;
+  }
+
+  /* ── Landing page ─────────────────────────────────────────────────────── */
+
+  .landing {
+    height: 100dvh;
+    align-items: flex-start;
+  }
+
+  .landing-inner {
+    padding: 48px 24px 40px;
+    gap: 14px;
+  }
+
+  .landing-title {
+    font-size: 28px;
+    max-width: 22ch;
+  }
+
+  .landing-blurb {
+    font-size: 14px;
+    max-width: 100%;
+  }
+
+  .landing-cta {
+    width: 100%;
+    text-align: center;
+  }
+
+  .landing-steps {
+    grid-template-columns: 1fr;
+    margin-top: 16px;
+    gap: 12px;
+    text-align: left;
+    width: 100%;
+  }
+
+  /* Auth modal: no tabbar on landing, so remove bottom gap */
+  .auth-modal {
+    margin-bottom: 0;
+    max-height: 90dvh;
+    border-radius: 16px 16px 0 0;
   }
 
 }
