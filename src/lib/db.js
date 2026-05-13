@@ -1,7 +1,6 @@
 import { supabase } from './supabase.js';
 
 // ── Serialization ────────────────────────────────────────────────────────────
-// Date objects → ISO strings for JSONB storage; revived on read.
 
 function serializeExam(exam) {
   return JSON.parse(JSON.stringify(exam));
@@ -16,10 +15,12 @@ function reviveExam(data) {
 
 function reviveWindows(rows) {
   return rows.map((r) => ({
+    id: r.id,
     examId: r.exam_id,
     start: new Date(r.start_date + 'T00:00:00'),
     end: new Date(r.end_date + 'T00:00:00'),
     label: r.label || '',
+    completed: r.completed || false,
   }));
 }
 
@@ -62,7 +63,7 @@ export async function removeExam(examId) {
 export async function fetchStudyWindows() {
   const { data, error } = await supabase
     .from('study_windows')
-    .select('exam_id, start_date, end_date, label')
+    .select('id, exam_id, start_date, end_date, label, completed')
     .order('start_date', { ascending: true });
   if (error) throw error;
   return reviveWindows(data);
@@ -72,7 +73,6 @@ export async function replaceStudyWindows(windows) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Non autenticato');
 
-  // Delete all, then insert new ones in a single transaction-like sequence
   await supabase.from('study_windows').delete().eq('user_id', user.id);
 
   if (windows.length === 0) return;
@@ -83,6 +83,7 @@ export async function replaceStudyWindows(windows) {
     start_date: fmtDate(w.start),
     end_date: fmtDate(w.end),
     label: w.label,
+    completed: false,
   }));
 
   const { error } = await supabase.from('study_windows').insert(rows);
@@ -92,4 +93,60 @@ export async function replaceStudyWindows(windows) {
 export async function removeStudyWindowsForExam(examId) {
   const { error } = await supabase.from('study_windows').delete().eq('exam_id', examId);
   if (error) throw error;
+}
+
+export async function updateStudyWindowComplete(windowId, completed) {
+  const { error } = await supabase
+    .from('study_windows')
+    .update({ completed })
+    .eq('id', windowId);
+  if (error) throw error;
+}
+
+// ── Date picks ───────────────────────────────────────────────────────────────
+
+export async function fetchDatePicks() {
+  const { data, error } = await supabase
+    .from('exam_date_picks')
+    .select('exam_id, component_name, pick_date');
+  if (error) throw error;
+  return data.map((r) => ({
+    examId: r.exam_id,
+    componentName: r.component_name,
+    date: new Date(r.pick_date + 'T00:00:00'),
+  }));
+}
+
+export async function replaceDatePicks(picks) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Non autenticato');
+
+  await supabase.from('exam_date_picks').delete().eq('user_id', user.id);
+
+  if (picks.length === 0) return;
+
+  const rows = picks.map((p) => ({
+    user_id: user.id,
+    exam_id: p.examId,
+    component_name: p.componentName,
+    pick_date: p.date,
+  }));
+
+  const { error } = await supabase.from('exam_date_picks').insert(rows);
+  if (error) throw error;
+}
+
+export async function removeDatePicksForExam(examId) {
+  const { error } = await supabase.from('exam_date_picks').delete().eq('exam_id', examId);
+  if (error) throw error;
+}
+
+export async function clearPlan() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Non autenticato');
+
+  await Promise.all([
+    supabase.from('exam_date_picks').delete().eq('user_id', user.id),
+    supabase.from('study_windows').delete().eq('user_id', user.id),
+  ]);
 }

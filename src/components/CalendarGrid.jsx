@@ -22,35 +22,46 @@ function EventChip({ ev, onHover, onMove, onLeave, onClick }) {
   );
 }
 
-function StudyBlock({ st, onHover, onMove, onLeave }) {
+function StudyBlock({ st, onHover, onMove, onLeave, onClick }) {
   return (
     <div
-      className="study"
+      className={`study ${st.completed ? 'study-done' : ''}`}
       style={{ '--tag': TAG_CSS[st.exam.tag] }}
       onMouseEnter={(e) => onHover(e, st)}
       onMouseMove={onMove}
       onMouseLeave={onLeave}
+      onClick={onClick}
+      title={st.completed ? 'Completato · clicca per annullare' : 'Clicca per segnare come completato'}
     >
-      <span className="stype">Studia</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <span className="stype">{st.completed ? '✓' : 'Studia'}</span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: st.completed ? 'line-through' : 'none' }}>
         {st.exam.name.split(' ')[0]}
       </span>
     </div>
   );
 }
 
-function buildBuckets(cells, exams, studyWindows) {
+function isPicked(ev, datePicks) {
+  if (datePicks.length === 0) return true;
+  return datePicks.some(
+    (p) => p.examId === ev.exam.id && p.componentName === ev.component && sameDay(p.date, ev.date.date)
+  );
+}
+
+function buildBuckets(cells, exams, studyWindows, datePicks, showAllDates) {
   const buckets = new Map();
   for (const c of cells) buckets.set(c.date.toDateString(), { events: [], studies: [] });
+
+  const filterByPlan = datePicks.length > 0 && !showAllDates;
 
   for (const exam of exams) {
     for (const comp of exam.components) {
       for (const dt of comp.dates) {
         if (!dt.date) continue;
+        const ev = { exam, component: comp.name, date: dt, locked: dt.locked };
+        if (filterByPlan && !isPicked(ev, datePicks)) continue;
         const key = dt.date.toDateString();
-        if (buckets.has(key)) {
-          buckets.get(key).events.push({ exam, component: comp.name, date: dt, locked: dt.locked });
-        }
+        if (buckets.has(key)) buckets.get(key).events.push(ev);
       }
     }
   }
@@ -63,8 +74,10 @@ function buildBuckets(cells, exams, studyWindows) {
       if (d >= startOfDay(sw.start) && d <= startOfDay(sw.end)) {
         const key = c.date.toDateString();
         buckets.get(key).studies.push({
+          id: sw.id,
           exam,
           label: sw.label,
+          completed: sw.completed || false,
           isStart: sameDay(c.date, sw.start),
           isEnd: sameDay(c.date, sw.end),
         });
@@ -75,9 +88,12 @@ function buildBuckets(cells, exams, studyWindows) {
   return buckets;
 }
 
-export function CalendarGrid({ year, month, exams, studyWindows, today, studyStyle, onSelectExam }) {
+export function CalendarGrid({ year, month, exams, studyWindows, datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete }) {
   const allCells = useMemo(() => monthGrid(year, month), [year, month]);
-  const buckets = useMemo(() => buildBuckets(allCells, exams, studyWindows), [allCells, exams, studyWindows]);
+  const buckets = useMemo(
+    () => buildBuckets(allCells, exams, studyWindows, datePicks, showAllDates),
+    [allCells, exams, studyWindows, datePicks, showAllDates]
+  );
   const { tt, show, move, hide } = useTooltip();
 
   const showEvent = (e, ev) => show(e, (
@@ -101,6 +117,7 @@ export function CalendarGrid({ year, month, exams, studyWindows, today, studySty
         <span className="l">Carico</span>
         <span>{loadScore(st.exam.effort, st.exam.difficulty).label}</span>
       </div>
+      {st.completed && <div className="ttline"><span className="l">✓</span><span>Completato</span></div>}
     </>
   ));
 
@@ -136,7 +153,14 @@ export function CalendarGrid({ year, month, exams, studyWindows, today, studySty
               />
             )),
             ...studies.map((st, idx) => (
-              <StudyBlock key={'s' + idx} st={st} onHover={showStudy} onMove={move} onLeave={hide} />
+              <StudyBlock
+                key={'s' + idx}
+                st={st}
+                onHover={showStudy}
+                onMove={move}
+                onLeave={hide}
+                onClick={() => onToggleStudyComplete?.(st.id)}
+              />
             )),
           ];
 

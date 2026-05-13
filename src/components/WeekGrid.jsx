@@ -1,20 +1,29 @@
 import { useMemo } from 'react';
 import { TAG_CSS } from '../data.js';
-import { WEEKDAYS_IT, MONTHS_IT, sameDay, startOfDay, formatLongDate, loadScore } from '../utils/dates.js';
+import { WEEKDAYS_IT, sameDay, startOfDay, formatLongDate, loadScore } from '../utils/dates.js';
 import { useTooltip, Tooltip } from './ui/index.jsx';
 
-function buildWeekBuckets(cells, exams, studyWindows) {
+function isPicked(ev, datePicks) {
+  if (datePicks.length === 0) return true;
+  return datePicks.some(
+    (p) => p.examId === ev.exam.id && p.componentName === ev.component && sameDay(p.date, ev.date.date)
+  );
+}
+
+function buildWeekBuckets(cells, exams, studyWindows, datePicks, showAllDates) {
   const buckets = new Map();
   for (const c of cells) buckets.set(c.date.toDateString(), { events: [], studies: [] });
+
+  const filterByPlan = datePicks.length > 0 && !showAllDates;
 
   for (const exam of exams) {
     for (const comp of exam.components) {
       for (const dt of comp.dates) {
         if (!dt.date) continue;
+        const ev = { exam, component: comp.name, date: dt, locked: dt.locked };
+        if (filterByPlan && !isPicked(ev, datePicks)) continue;
         const key = dt.date.toDateString();
-        if (buckets.has(key)) {
-          buckets.get(key).events.push({ exam, component: comp.name, date: dt, locked: dt.locked });
-        }
+        if (buckets.has(key)) buckets.get(key).events.push(ev);
       }
     }
   }
@@ -26,7 +35,12 @@ function buildWeekBuckets(cells, exams, studyWindows) {
       const d = startOfDay(c.date);
       if (d >= startOfDay(sw.start) && d <= startOfDay(sw.end)) {
         const key = c.date.toDateString();
-        buckets.get(key).studies.push({ exam, label: sw.label });
+        buckets.get(key).studies.push({
+          id: sw.id,
+          exam,
+          label: sw.label,
+          completed: sw.completed || false,
+        });
       }
     }
   }
@@ -57,22 +71,26 @@ function WeekEventChip({ ev, onHover, onMove, onLeave, onClick }) {
   );
 }
 
-function WeekStudyBlock({ st, onHover, onMove, onLeave }) {
+function WeekStudyBlock({ st, onHover, onMove, onLeave, onClick }) {
   return (
     <div
-      className="study"
+      className={`study ${st.completed ? 'study-done' : ''}`}
       style={{ '--tag': TAG_CSS[st.exam.tag] }}
       onMouseEnter={(e) => onHover(e, st)}
       onMouseMove={onMove}
       onMouseLeave={onLeave}
+      onClick={onClick}
+      title={st.completed ? 'Completato · clicca per annullare' : 'Clicca per segnare come completato'}
     >
-      <span className="stype">Studio</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.exam.name.split(' ')[0]}</span>
+      <span className="stype">{st.completed ? '✓' : 'Studio'}</span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: st.completed ? 'line-through' : 'none' }}>
+        {st.exam.name.split(' ')[0]}
+      </span>
     </div>
   );
 }
 
-export function WeekGrid({ weekStart, exams, studyWindows, today, studyStyle, onSelectExam }) {
+export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete }) {
   const cells = useMemo(() =>
     Array.from({ length: 7 }, (_, i) => {
       const dt = new Date(weekStart.getTime() + i * 86400000);
@@ -81,8 +99,8 @@ export function WeekGrid({ weekStart, exams, studyWindows, today, studyStyle, on
   [weekStart]);
 
   const buckets = useMemo(
-    () => buildWeekBuckets(cells, exams, studyWindows),
-    [cells, exams, studyWindows]
+    () => buildWeekBuckets(cells, exams, studyWindows, datePicks, showAllDates),
+    [cells, exams, studyWindows, datePicks, showAllDates]
   );
   const { tt, show, move, hide } = useTooltip();
 
@@ -107,12 +125,12 @@ export function WeekGrid({ weekStart, exams, studyWindows, today, studyStyle, on
         <span className="l">Carico</span>
         <span>{loadScore(st.exam.effort, st.exam.difficulty).label}</span>
       </div>
+      {st.completed && <div className="ttline"><span className="l">✓</span><span>Completato</span></div>}
     </>
   ));
 
   return (
     <div className={`cal-wrap study-style-${studyStyle}`}>
-      {/* Day headers with full date */}
       <div className="cal-weekrow">
         {cells.map((c, i) => {
           const isToday = sameDay(c.date, today);
@@ -127,7 +145,6 @@ export function WeekGrid({ weekStart, exams, studyWindows, today, studyStyle, on
         })}
       </div>
 
-      {/* Single row of 7 tall cells */}
       <div className="week-grid">
         {cells.map((c, i) => {
           const key = c.date.toDateString();
@@ -166,7 +183,14 @@ export function WeekGrid({ weekStart, exams, studyWindows, today, studyStyle, on
                   />
                 ))}
                 {studies.map((st, idx) => (
-                  <WeekStudyBlock key={'s' + idx} st={st} onHover={showStudy} onMove={move} onLeave={hide} />
+                  <WeekStudyBlock
+                    key={'s' + idx}
+                    st={st}
+                    onHover={showStudy}
+                    onMove={move}
+                    onLeave={hide}
+                    onClick={() => onToggleStudyComplete?.(st.id)}
+                  />
                 ))}
               </div>
             </div>

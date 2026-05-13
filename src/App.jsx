@@ -3,9 +3,11 @@ import { supabase } from './lib/supabase.js';
 import {
   fetchExams, upsertExam, removeExam,
   fetchStudyWindows, replaceStudyWindows, removeStudyWindowsForExam,
+  fetchDatePicks, replaceDatePicks, removeDatePicksForExam,
+  updateStudyWindowComplete, clearPlan,
 } from './lib/db.js';
 import { TODAY } from './data.js';
-import { generateStudyPlan } from './utils/groq.js';
+import { hasGroqKey } from './utils/groq.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { MonthHeader } from './components/MonthHeader.jsx';
 import { CalendarGrid } from './components/CalendarGrid.jsx';
@@ -16,6 +18,11 @@ import { CalendarExportModal } from './components/CalendarExportModal.jsx';
 import { AuthModal } from './components/AuthModal.jsx';
 import { LandingScreen } from './components/LandingScreen.jsx';
 import { GroqKeyModal } from './components/GroqKeyModal.jsx';
+import { AIPlanModal } from './components/AIPlanModal.jsx';
+import { StudyTimeline } from './components/StudyTimeline.jsx';
+import { PomodoroTimer } from './components/PomodoroTimer.jsx';
+import { ImageImportModal } from './components/ImageImportModal.jsx';
+import { HelpModal } from './components/HelpModal.jsx';
 
 const TWEAKS_LS_KEY = 'sessionly-tweaks';
 
@@ -96,6 +103,7 @@ export default function App() {
   // ── App data ───────────────────────────────────────────────────────────────
   const [exams, setExams] = useState([]);
   const [studyWindows, setStudyWindows] = useState([]);
+  const [datePicks, setDatePicks] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   // ── UI state ───────────────────────────────────────────────────────────────
@@ -110,8 +118,13 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [showGroqKeyModal, setShowGroqKeyModal] = useState(false);
-  const [groqKeyAfterSave, setGroqKeyAfterSave] = useState(null); // 'plan' | null
-  const [aiLoading, setAiLoading] = useState(false);
+  const [showAIPlanModal, setShowAIPlanModal] = useState(false);
+  const [showImageImport, setShowImageImport] = useState(false);
+  const [showHelp, setShowHelp] = useState(() => {
+    try { return !localStorage.getItem('sessionly-help-seen'); } catch { return false; }
+  });
+  const [groqKeyAfterSave, setGroqKeyAfterSave] = useState(null);
+  const [showAllDates, setShowAllDates] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [saveError, setSaveError] = useState(null);
 
@@ -128,9 +141,14 @@ export default function App() {
   const loadData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [examsData, windowsData] = await Promise.all([fetchExams(), fetchStudyWindows()]);
+      const [examsData, windowsData, picksData] = await Promise.all([
+        fetchExams(),
+        fetchStudyWindows(),
+        fetchDatePicks(),
+      ]);
       setExams(examsData);
       setStudyWindows(windowsData);
+      setDatePicks(picksData);
     } catch (err) {
       console.error('Errore caricamento dati:', err);
     } finally {
@@ -155,13 +173,12 @@ export default function App() {
       } else {
         setExams([]);
         setStudyWindows([]);
+        setDatePicks([]);
       }
     });
 
     return () => subscription.unsubscribe();
   }, [loadData]);
-
-  // loadData is already called inside onAuthStateChange when a user logs in.
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -191,33 +208,105 @@ export default function App() {
   const deleteExam = async (id) => {
     setExams((prev) => prev.filter((e) => e.id !== id));
     setStudyWindows((prev) => prev.filter((s) => s.examId !== id));
+    setDatePicks((prev) => prev.filter((p) => p.examId !== id));
     setModal(null);
     setSelectedId(null);
 
     try {
-      await Promise.all([removeExam(id), removeStudyWindowsForExam(id)]);
+      await Promise.all([
+        removeExam(id),
+        removeStudyWindowsForExam(id),
+        removeDatePicksForExam(id),
+      ]);
     } catch (err) {
       setSaveError(`Errore eliminazione: ${err.message}`);
     }
   };
 
   // ── AI Plan ────────────────────────────────────────────────────────────────
-  const handleAIPlan = async () => {
-    setAiLoading(true);
-    setAiError(null);
+  const handleAIPlan = () => {
+    if (!hasGroqKey()) {
+      setGroqKeyAfterSave('plan');
+      setShowGroqKeyModal(true);
+      return;
+    }
+    setShowAIPlanModal(true);
+  };
+
+  const handleSelectPlan = async (plan) => {
+    setShowAIPlanModal(false);
+
+    const picksForState = plan.date_picks.map((p) => ({
+      examId: p.examId,
+      componentName: p.componentName,
+      date: new Date(p.date + 'T00:00:00'),
+    }));
+
+    const picksForDb = plan.date_picks.map((p) => ({
+      examId: p.examId,
+      componentName: p.componentName,
+      date: p.date,
+    }));
+
+    const windows = plan.study_windows.map((w) => ({
+      examId: w.examId,
+      start: new Date(w.start + 'T00:00:00'),
+      end: new Date(w.end + 'T00:00:00'),
+      label: w.label || 'Studio',
+    }));
+
+    setDatePicks(picksForState);
+    setStudyWindows(windows);
+    setShowAllDates(false);
+
     try {
-      const windows = await generateStudyPlan(exams);
-      setStudyWindows(windows);
-      await replaceStudyWindows(windows);
+      await Promise.all([
+        replaceDatePicks(picksForDb),
+        replaceStudyWindows(windows),
+      ]);
+      // Reload to get server-assigned IDs for study windows (needed for completion toggle)
+      const [windowsData, picksData] = await Promise.all([fetchStudyWindows(), fetchDatePicks()]);
+      setStudyWindows(windowsData);
+      setDatePicks(picksData);
     } catch (err) {
-      if (err.code === 'NO_KEY') {
-        setGroqKeyAfterSave('plan');
-        setShowGroqKeyModal(true);
-      } else {
-        setAiError(err.message);
-      }
-    } finally {
-      setAiLoading(false);
+      setSaveError(`Errore salvataggio piano: ${err.message}`);
+    }
+  };
+
+  const handleRemovePlan = async () => {
+    setDatePicks([]);
+    setStudyWindows([]);
+    setShowAllDates(false);
+    try {
+      await clearPlan();
+    } catch (err) {
+      setSaveError(`Errore rimozione piano: ${err.message}`);
+    }
+  };
+
+  const handleToggleStudyComplete = async (windowId) => {
+    const win = studyWindows.find((w) => w.id === windowId);
+    if (!win) return;
+    const newCompleted = !win.completed;
+    setStudyWindows((prev) =>
+      prev.map((w) => w.id === windowId ? { ...w, completed: newCompleted } : w)
+    );
+    try {
+      await updateStudyWindowComplete(windowId, newCompleted);
+    } catch (err) {
+      setSaveError(`Errore aggiornamento: ${err.message}`);
+    }
+  };
+
+  const handleImportExams = async (drafts) => {
+    setShowImageImport(false);
+    const newExams = drafts.map((d) => ({ ...d, id: 'ex_' + Date.now() + '_' + Math.random().toString(36).slice(2) }));
+    setExams((prev) => [...prev, ...newExams]);
+    setTweak('showOnboarding', false);
+    try {
+      await Promise.all(newExams.map((e) => upsertExam(e, user.id)));
+    } catch (err) {
+      setSaveError(`Errore salvataggio: ${err.message}`);
     }
   };
 
@@ -225,7 +314,7 @@ export default function App() {
     const runPlan = groqKeyAfterSave === 'plan';
     setShowGroqKeyModal(false);
     setGroqKeyAfterSave(null);
-    if (runPlan) handleAIPlan();
+    if (runPlan) setShowAIPlanModal(true);
   };
 
   // ── Navigation ─────────────────────────────────────────────────────────────
@@ -271,7 +360,9 @@ export default function App() {
 
   const visibleExams = tweaks.showOnboarding ? [] : exams;
   const visibleStudy = tweaks.showOnboarding ? [] : studyWindows;
+  const visiblePicks = tweaks.showOnboarding ? [] : datePicks;
   const initial = modal?.mode === 'edit' ? exams.find((e) => e.id === modal.id) : null;
+  const hasPlan = visiblePicks.length > 0;
 
   return (
     <div className="app">
@@ -282,6 +373,8 @@ export default function App() {
         selectedId={selectedId}
         onSelect={openEdit}
         onAdd={() => setModal({ mode: 'new' })}
+        onImportImage={() => setShowImageImport(true)}
+        onHelp={() => setShowHelp(true)}
       />
 
       <main className="main">
@@ -295,7 +388,10 @@ export default function App() {
           view={view}
           onView={setView}
           onAIPlan={handleAIPlan}
-          aiLoading={aiLoading}
+          hasPlan={hasPlan}
+          onRemovePlan={handleRemovePlan}
+          showAllDates={showAllDates}
+          onToggleAllDates={() => setShowAllDates((v) => !v)}
           onExport={() => setShowExport(true)}
           user={user}
           onLogout={handleLogout}
@@ -323,6 +419,8 @@ export default function App() {
           </div>
         )}
 
+        <StudyTimeline exams={visibleExams} datePicks={visiblePicks} today={TODAY} />
+
         {tweaks.showOnboarding || exams.length === 0 ? (
           <EmptyState onAdd={() => setModal({ mode: 'new' })} />
         ) : view === 'week' ? (
@@ -330,9 +428,12 @@ export default function App() {
             weekStart={weekStart}
             exams={visibleExams}
             studyWindows={visibleStudy}
+            datePicks={visiblePicks}
+            showAllDates={showAllDates}
             today={TODAY}
             studyStyle={tweaks.studyStyle}
             onSelectExam={openEdit}
+            onToggleStudyComplete={handleToggleStudyComplete}
           />
         ) : (
           <CalendarGrid
@@ -340,9 +441,12 @@ export default function App() {
             month={month}
             exams={visibleExams}
             studyWindows={visibleStudy}
+            datePicks={visiblePicks}
+            showAllDates={showAllDates}
             today={TODAY}
             studyStyle={tweaks.studyStyle}
             onSelectExam={openEdit}
+            onToggleStudyComplete={handleToggleStudyComplete}
           />
         )}
       </main>
@@ -362,6 +466,7 @@ export default function App() {
       {showExport && (
         <CalendarExportModal
           exams={exams}
+          datePicks={visiblePicks}
           onClose={() => setShowExport(false)}
         />
       )}
@@ -373,7 +478,35 @@ export default function App() {
         />
       )}
 
+      {showAIPlanModal && (
+        <AIPlanModal
+          exams={exams}
+          hasPlan={hasPlan}
+          onSelectPlan={handleSelectPlan}
+          onNoGroqKey={() => {
+            setShowAIPlanModal(false);
+            setGroqKeyAfterSave('plan');
+            setShowGroqKeyModal(true);
+          }}
+          onClose={() => setShowAIPlanModal(false)}
+        />
+      )}
+
+      {showImageImport && (
+        <ImageImportModal
+          onImport={handleImportExams}
+          onNoGroqKey={() => { setShowImageImport(false); setGroqKeyAfterSave(null); setShowGroqKeyModal(true); }}
+          onClose={() => setShowImageImport(false)}
+        />
+      )}
+
+      {showHelp && <HelpModal onClose={() => {
+        try { localStorage.setItem('sessionly-help-seen', '1'); } catch {}
+        setShowHelp(false);
+      }} />}
+
       <TweaksPanel tweaks={tweaks} onTweak={setTweak} onGroqKey={() => setShowGroqKeyModal(true)} />
+      <PomodoroTimer />
     </div>
   );
 }

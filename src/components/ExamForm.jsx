@@ -27,6 +27,10 @@ const blank = {
   notes: '',
   partial1Done: false,
   partial1Grade: 18,
+  examApproach: null,
+  pages: '',
+  pdfCount: '',
+  topics: '',
   components: [
     { name: 'Scritto', dates: [{ id: 'n1', date: null, time: '', room: '', locked: false }] },
     { name: 'Orale',   dates: [{ id: 'n2', date: null, time: '', room: '', locked: false }] },
@@ -49,6 +53,10 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
   });
 
   // ── voice / AI section ──────────────────────────────────────────────────
+  const [showProgramDetails, setShowProgramDetails] = useState(
+    !!(initial?.topics || initial?.pages || initial?.examApproach)
+  );
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
   const [voiceText, setVoiceText] = useState('');
   const [voiceLoading, setVoiceLoading] = useState(false);
@@ -111,8 +119,15 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
         ...(extracted.tag ? { tag: extracted.tag } : {}),
         ...(extracted.effort != null ? { effort: extracted.effort } : {}),
         ...(extracted.difficulty != null ? { difficulty: extracted.difficulty } : {}),
+        ...(extracted.examApproach ? { examApproach: extracted.examApproach } : {}),
+        ...(extracted.pages ? { pages: String(extracted.pages) } : {}),
+        ...(extracted.pdfCount ? { pdfCount: String(extracted.pdfCount) } : {}),
+        ...(extracted.topics?.length ? { topics: extracted.topics.join('\n') } : {}),
         ...(newComponents ? { components: newComponents, type: newType } : {}),
       }));
+      if (extracted.examApproach || extracted.pages || extracted.topics?.length) {
+        setShowProgramDetails(true);
+      }
       setShowVoice(false);
       setVoiceText('');
     } catch (err) {
@@ -473,6 +488,87 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
             />
           </div>
 
+          {/* ── program details (collapsible) ─── */}
+          <div className="program-details-section">
+            <button
+              type="button"
+              className="program-details-toggle"
+              onClick={() => setShowProgramDetails((v) => !v)}
+            >
+              <span>{showProgramDetails ? '▾' : '▸'}</span>
+              Dettagli programma
+              {(draft.examApproach || draft.pages || draft.topics) && (
+                <span className="program-details-dot" />
+              )}
+            </button>
+
+            {showProgramDetails && (
+              <div className="program-details-body">
+                <div className="field">
+                  <label className="field-label">Tipo di studio</label>
+                  <div className="pills">
+                    {[
+                      { id: 'teorico', label: 'Teorico', hint: 'Ripasso e memorizzazione' },
+                      { id: 'misto',   label: 'Misto',   hint: 'Teoria + esercizi' },
+                      { id: 'pratico', label: 'Pratico', hint: 'Esercizi e prove simulate' },
+                    ].map((a) => (
+                      <button
+                        key={a.id}
+                        className={`pill ${draft.examApproach === a.id ? 'on' : ''}`}
+                        title={a.hint}
+                        onClick={() => set({ examApproach: draft.examApproach === a.id ? null : a.id })}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="field-hint">
+                    {draft.examApproach === 'pratico' && "L'AI riserverà tempo per esercizi e prove d'esame."}
+                    {draft.examApproach === 'teorico' && "L'AI riserverà tempo per ripasso e consolidamento."}
+                    {draft.examApproach === 'misto' && "L'AI bilancerà teoria ed esercizi."}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="field">
+                    <label className="field-label">Pagine totali</label>
+                    <input
+                      type="number"
+                      className="input mono"
+                      min={0}
+                      placeholder="es. 320"
+                      value={draft.pages}
+                      onChange={(e) => set({ pages: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field-label">N° PDF / file</label>
+                    <input
+                      type="number"
+                      className="input mono"
+                      min={0}
+                      placeholder="es. 8"
+                      value={draft.pdfCount}
+                      onChange={(e) => set({ pdfCount: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label className="field-label">Argomenti del programma</label>
+                  <textarea
+                    className="input"
+                    style={{ minHeight: 90 }}
+                    placeholder={'Un argomento per riga:\nAlgebra lineare\nSerie di Fourier\nEquazioni differenziali'}
+                    value={draft.topics}
+                    onChange={(e) => set({ topics: e.target.value })}
+                  />
+                  <div className="field-hint">L'AI dividerà questi argomenti nelle sessioni di studio.</div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* ── exam outcome (shown only when date has passed) ── */}
           {examHasPassed && (
             <div className="outcome-section">
@@ -504,10 +600,21 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
 
         <div className="modal-ft">
           <div>
-            {isEditing && (
-              <button className="btn danger" onClick={() => onDelete(initial.id)}>
+            {isEditing && !confirmDelete && (
+              <button className="btn danger" onClick={() => setConfirmDelete(true)}>
                 Elimina esame
               </button>
+            )}
+            {isEditing && confirmDelete && (
+              <div className="delete-confirm-row">
+                <span className="delete-confirm-text">Sicuro?</span>
+                <button className="btn danger" onClick={() => onDelete(initial.id)}>
+                  Sì, elimina
+                </button>
+                <button className="btn ghost" style={{ padding: '7px 12px' }} onClick={() => setConfirmDelete(false)}>
+                  Annulla
+                </button>
+              </div>
             )}
           </div>
           <div className="row" style={{ gap: 8 }}>

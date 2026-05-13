@@ -53,6 +53,8 @@ export function MonthHeader({
   onPrev, onNext, onToday,
   view, onView,
   onAIPlan, aiLoading,
+  hasPlan, onRemovePlan,
+  showAllDates, onToggleAllDates,
   onExport,
   user, onLogout,
 }) {
@@ -82,6 +84,26 @@ export function MonthHeader({
           <span>{aiLoading ? '⟳' : '✦'}</span>
           {aiLoading ? 'Generazione...' : 'Piano AI'}
         </button>
+
+        {hasPlan && (
+          <button
+            className="remove-plan-btn"
+            onClick={onRemovePlan}
+            title="Rimuovi il piano AI"
+          >
+            Rimuovi piano
+          </button>
+        )}
+
+        {hasPlan && (
+          <button
+            className={`show-all-btn ${showAllDates ? 'on' : ''}`}
+            onClick={onToggleAllDates}
+            title={showAllDates ? 'Mostra solo date del piano' : 'Mostra tutte le date degli esami'}
+          >
+            {showAllDates ? '◉' : '◎'} Tutte le date
+          </button>
+        )}
 
         <button
           className="export-btn"
