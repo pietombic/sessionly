@@ -42,10 +42,12 @@ export async function fetchExams() {
 }
 
 export async function upsertExam(exam) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Non autenticato');
   const { id, ...rest } = exam;
   const { error } = await supabase
     .from('exams')
-    .upsert({ id, data: serializeExam(rest), updated_at: new Date().toISOString() });
+    .upsert({ id, user_id: user.id, data: serializeExam(rest), updated_at: new Date().toISOString() });
   if (error) throw error;
 }
 

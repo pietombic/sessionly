@@ -1,5 +1,19 @@
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = 'llama-3.3-70b-versatile';
+const LS_KEY = 'sessionly-groq-key';
+
+export function getGroqKey() {
+  return localStorage.getItem(LS_KEY) || import.meta.env.VITE_GROQ_API_KEY || null;
+}
+
+export function saveGroqKey(key) {
+  if (key) localStorage.setItem(LS_KEY, key.trim());
+  else localStorage.removeItem(LS_KEY);
+}
+
+export function hasGroqKey() {
+  return !!getGroqKey();
+}
 
 function formatDateISO(date) {
   if (!date) return null;
@@ -18,16 +32,21 @@ function firstExamDate(exam) {
 }
 
 export async function generateStudyPlan(exams) {
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  if (!apiKey) throw new Error('VITE_GROQ_API_KEY non trovata nel file .env');
+  const apiKey = getGroqKey();
+  if (!apiKey) {
+    const err = new Error('Chiave Groq non configurata.');
+    err.code = 'NO_KEY';
+    throw err;
+  }
 
   const examSummaries = exams
     .filter((e) => firstExamDate(e))
     .map((e) => {
       const dates = e.components
-        .flatMap((c) => c.dates
-          .filter((d) => d.date)
-          .map((d) => `${c.name}: ${formatDateISO(d.date)}${d.locked ? ' (BLOCCATA)' : ''}`)
+        .flatMap((c) =>
+          c.dates
+            .filter((d) => d.date)
+            .map((d) => `${c.name}: ${formatDateISO(d.date)}${d.locked ? ' (BLOCCATA)' : ''}`)
         )
         .join(', ');
       return `- id: "${e.id}", nome: "${e.name}", effort: ${e.effort}/10, difficoltà: ${e.difficulty}/10, date: ${dates}`;

@@ -75,9 +75,14 @@ function buildBuckets(cells, exams, studyWindows) {
   return buckets;
 }
 
-export function CalendarGrid({ year, month, exams, studyWindows, today, studyStyle, onSelectExam }) {
-  const cells = useMemo(() => monthGrid(year, month), [year, month]);
-  const buckets = useMemo(() => buildBuckets(cells, exams, studyWindows), [cells, exams, studyWindows]);
+export function CalendarGrid({ year, month, exams, studyWindows, today, studyStyle, clipMonth, onSelectExam }) {
+  const allCells = useMemo(() => monthGrid(year, month), [year, month]);
+  const cells = useMemo(() => {
+    if (!clipMonth) return allCells;
+    const lastDay = new Date(year, month + 1, 0);
+    return allCells.filter((c) => c.date <= lastDay);
+  }, [allCells, clipMonth, year, month]);
+  const buckets = useMemo(() => buildBuckets(allCells, exams, studyWindows), [allCells, exams, studyWindows]);
   const { tt, show, move, hide } = useTooltip();
 
   const showEvent = (e, ev) => show(e, (

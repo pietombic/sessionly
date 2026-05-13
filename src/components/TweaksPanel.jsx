@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { getGroqKey } from '../utils/groq.js';
 
 const STYLE = `
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
@@ -150,7 +151,7 @@ function PaletteChips({ value, onChange }) {
   );
 }
 
-export function TweaksPanel({ tweaks, onTweak }) {
+export function TweaksPanel({ tweaks, onTweak, onGroqKey }) {
   const [open, setOpen] = useState(false);
   const dragRef = useRef(null);
   const offsetRef = useRef({ x: 16, y: 16 });
@@ -276,6 +277,34 @@ export function TweaksPanel({ tweaks, onTweak }) {
                 ]}
                 onChange={(v) => onTweak('sliderStyle', v)}
               />
+              <TweakToggle
+                label="Taglia mese"
+                value={tweaks.clipMonth}
+                onChange={(v) => onTweak('clipMonth', v)}
+              />
+
+              <TweakSection label="AI" />
+              <div className="twk-row">
+                <div className="twk-lbl">
+                  <span>Chiave Groq</span>
+                  <span style={{ fontSize: 10, color: getGroqKey() ? '#34c759' : 'rgba(41,38,27,.4)' }}>
+                    {getGroqKey() ? '● Configurata' : '● Non configurata'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  style={{
+                    appearance: 'none', border: '1px solid rgba(0,0,0,.15)',
+                    background: 'rgba(255,255,255,.5)', borderRadius: 5,
+                    padding: '5px 10px', fontSize: 11, fontFamily: 'inherit',
+                    cursor: 'default', color: 'rgba(41,38,27,.8)',
+                    marginTop: 4,
+                  }}
+                  onClick={onGroqKey}
+                >
+                  {getGroqKey() ? 'Modifica chiave' : 'Aggiungi chiave'}
+                </button>
+              </div>
 
               <TweakSection label="Stato" />
               <TweakToggle

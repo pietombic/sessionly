@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { MONTHS_IT } from '../utils/dates.js';
 
+function weekRangeTitle(weekStart) {
+  const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+  const s = weekStart.getDate();
+  const e = weekEnd.getDate();
+  const sm = MONTHS_IT[weekStart.getMonth()];
+  const em = MONTHS_IT[weekEnd.getMonth()];
+  if (weekStart.getMonth() !== weekEnd.getMonth()) return `${s} ${sm} – ${e} ${em}`;
+  return `${s}–${e} ${sm}`;
+}
+
 function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -39,18 +49,23 @@ function UserMenu({ user, onLogout }) {
 }
 
 export function MonthHeader({
-  year, month, onPrev, onNext, onToday,
+  year, month, weekStart,
+  onPrev, onNext, onToday,
   view, onView,
   onAIPlan, aiLoading,
   onExport,
   user, onLogout,
 }) {
+  const isWeek = view === 'week' && weekStart;
+  const titleText = isWeek ? weekRangeTitle(weekStart) : MONTHS_IT[month];
+  const titleYear = isWeek ? weekStart.getFullYear() : year;
+
   return (
     <div className="main-hd">
       <div className="titles">
         <h1>
-          {MONTHS_IT[month]}
-          <span className="year">{year}</span>
+          {titleText}
+          <span className="year">{titleYear}</span>
         </h1>
         <div className="sub">
           La tua sessione, giorno per giorno. <em>Coraggio.</em>
@@ -79,12 +94,12 @@ export function MonthHeader({
 
         <div className="nav">
           <button className="today-btn" onClick={onToday}>Oggi</button>
-          <button className="nav-btn" aria-label="Mese precedente" onClick={onPrev}>
+          <button className="nav-btn" aria-label={isWeek ? 'Settimana precedente' : 'Mese precedente'} onClick={onPrev}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <button className="nav-btn" aria-label="Mese successivo" onClick={onNext}>
+          <button className="nav-btn" aria-label={isWeek ? 'Settimana successiva' : 'Mese successivo'} onClick={onNext}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>

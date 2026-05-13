@@ -9,11 +9,13 @@ import { generateStudyPlan } from './utils/groq.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { MonthHeader } from './components/MonthHeader.jsx';
 import { CalendarGrid } from './components/CalendarGrid.jsx';
+import { WeekGrid } from './components/WeekGrid.jsx';
 import { ExamForm } from './components/ExamForm.jsx';
 import { TweaksPanel } from './components/TweaksPanel.jsx';
 import { CalendarExportModal } from './components/CalendarExportModal.jsx';
 import { AuthModal } from './components/AuthModal.jsx';
 import { LandingScreen } from './components/LandingScreen.jsx';
+import { GroqKeyModal } from './components/GroqKeyModal.jsx';
 
 const TWEAK_DEFAULTS = {
   palette: 'classic',
@@ -22,7 +24,17 @@ const TWEAK_DEFAULTS = {
   sliderStyle: 'ticks',
   dark: false,
   showOnboarding: false,
+  clipMonth: false,
 };
+
+function getWeekStart(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 function AppLoading() {
   return (
@@ -68,7 +80,7 @@ function EmptyState({ onAdd }) {
 
 export default function App() {
   // ── Auth state ─────────────────────────────────────────────────────────────
-  const [authReady, setAuthReady] = useState(false); // true once we know if user is logged in
+  const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
@@ -83,10 +95,12 @@ export default function App() {
 
   const [year, setYear] = useState(TODAY.getFullYear());
   const [month, setMonth] = useState(TODAY.getMonth());
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(TODAY));
   const [view, setView] = useState('month');
   const [selectedId, setSelectedId] = useState(null);
   const [modal, setModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
+  const [showGroqKeyModal, setShowGroqKeyModal] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
 
@@ -114,13 +128,11 @@ export default function App() {
 
   // ── Auth lifecycle ─────────────────────────────────────────────────────────
   useEffect(() => {
-    // Check initial session (handles OAuth redirects automatically)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setAuthReady(true);
     });
 
-    // Listen for auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const newUser = session?.user ?? null;
       setUser(newUser);
@@ -129,7 +141,6 @@ export default function App() {
         setShowAuthModal(false);
         loadData();
       } else {
-        // Logged out — clear data
         setExams([]);
         setStudyWindows([]);
       }
@@ -138,7 +149,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, [loadData]);
 
-  // Load data when user first becomes available
   useEffect(() => {
     if (user) loadData();
   }, [user, loadData]);
@@ -190,27 +200,41 @@ export default function App() {
       setStudyWindows(windows);
       await replaceStudyWindows(windows);
     } catch (err) {
-      setAiError(err.message);
+      if (err.code === 'NO_KEY') {
+        setShowGroqKeyModal(true);
+      } else {
+        setAiError(err.message);
+      }
     } finally {
       setAiLoading(false);
     }
   };
 
+  const handleGroqKeySaved = () => {
+    setShowGroqKeyModal(false);
+    handleAIPlan();
+  };
+
   // ── Navigation ─────────────────────────────────────────────────────────────
   const navMonth = (delta) => {
-    setMonth((m) => {
-      let nm = m + delta, ny = year;
-      if (nm < 0) { nm = 11; ny--; }
-      if (nm > 11) { nm = 0; ny++; }
-      setYear(ny);
-      return nm;
-    });
+    let nm = month + delta;
+    let ny = year;
+    if (nm < 0) { nm = 11; ny--; }
+    if (nm > 11) { nm = 0; ny++; }
+    setMonth(nm);
+    setYear(ny);
   };
 
   const goToday = () => {
     setMonth(TODAY.getMonth());
     setYear(TODAY.getFullYear());
   };
+
+  const navWeek = (delta) => {
+    setWeekStart((ws) => new Date(ws.getTime() + delta * 7 * 86400000));
+  };
+
+  const goTodayWeek = () => setWeekStart(getWeekStart(TODAY));
 
   const openEdit = (id) => {
     setSelectedId(id);
@@ -219,10 +243,8 @@ export default function App() {
 
   // ── Render states ──────────────────────────────────────────────────────────
 
-  // 1. Waiting for Supabase to tell us if user is logged in
   if (!authReady) return <AppLoading />;
 
-  // 2. Not logged in → Landing + optional auth modal
   if (!user) {
     return (
       <>
@@ -232,10 +254,8 @@ export default function App() {
     );
   }
 
-  // 3. Logged in but still fetching data
   if (dataLoading && exams.length === 0) return <AppLoading />;
 
-  // 4. Full app
   const visibleExams = tweaks.showOnboarding ? [] : exams;
   const visibleStudy = tweaks.showOnboarding ? [] : studyWindows;
   const initial = modal?.mode === 'edit' ? exams.find((e) => e.id === modal.id) : null;
@@ -254,9 +274,10 @@ export default function App() {
         <MonthHeader
           year={year}
           month={month}
-          onPrev={() => navMonth(-1)}
-          onNext={() => navMonth(1)}
-          onToday={goToday}
+          weekStart={weekStart}
+          onPrev={view === 'week' ? () => navWeek(-1) : () => navMonth(-1)}
+          onNext={view === 'week' ? () => navWeek(1) : () => navMonth(1)}
+          onToday={view === 'week' ? goTodayWeek : goToday}
           view={view}
           onView={setView}
           onAIPlan={handleAIPlan}
@@ -279,6 +300,15 @@ export default function App() {
 
         {tweaks.showOnboarding || exams.length === 0 ? (
           <EmptyState onAdd={() => setModal({ mode: 'new' })} />
+        ) : view === 'week' ? (
+          <WeekGrid
+            weekStart={weekStart}
+            exams={visibleExams}
+            studyWindows={visibleStudy}
+            today={TODAY}
+            studyStyle={tweaks.studyStyle}
+            onSelectExam={openEdit}
+          />
         ) : (
           <CalendarGrid
             year={year}
@@ -287,6 +317,7 @@ export default function App() {
             studyWindows={visibleStudy}
             today={TODAY}
             studyStyle={tweaks.studyStyle}
+            clipMonth={tweaks.clipMonth}
             onSelectExam={openEdit}
           />
         )}
@@ -309,7 +340,14 @@ export default function App() {
         />
       )}
 
-      <TweaksPanel tweaks={tweaks} onTweak={setTweak} />
+      {showGroqKeyModal && (
+        <GroqKeyModal
+          onClose={() => setShowGroqKeyModal(false)}
+          onSaved={handleGroqKeySaved}
+        />
+      )}
+
+      <TweaksPanel tweaks={tweaks} onTweak={setTweak} onGroqKey={() => setShowGroqKeyModal(true)} />
     </div>
   );
 }
