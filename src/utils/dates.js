@@ -54,5 +54,12 @@ export function loadScore(effort, difficulty) {
 }
 
 export function statusLabel(s) {
-  return { todo: 'Da iniziare', active: 'In corso', partial: 'Parziale', done: 'Completato' }[s] || s;
+  return {
+    todo: 'Da iniziare',
+    active: 'In corso',
+    partial: 'Parziale',
+    done: 'Completato',
+    failed: 'Non superato',
+    saltato: 'Saltato',
+  }[s] || s;
 }
