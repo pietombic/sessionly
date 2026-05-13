@@ -252,6 +252,8 @@ export default function App() {
       examId: w.examId,
       start: new Date(w.start + 'T00:00:00'),
       end: new Date(w.end + 'T00:00:00'),
+      startTime: w.start_time || null,
+      endTime: w.end_time || null,
       label: w.label || 'Studio',
     }));
 
@@ -285,6 +287,7 @@ export default function App() {
   };
 
   const handleToggleStudyComplete = async (windowId) => {
+    if (!windowId) return;
     const win = studyWindows.find((w) => w.id === windowId);
     if (!win) return;
     const newCompleted = !win.completed;

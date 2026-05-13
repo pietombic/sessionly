@@ -152,16 +152,25 @@ export async function generateSessionPlan(exams, preferences, includeStudyBlocks
     })
     .join('\n\n');
 
-  const studyBlocksRule = includeStudyBlocks
-    ? `Per ogni piano includi finestre di studio ottimali. Regole: effort 7-10 → 10-15 giorni prima dell'esame, effort 4-6 → 5-9 giorni, effort 1-3 → 2-4 giorni. La finestra deve finire almeno 1 giorno prima dell'esame. Inizia le finestre da oggi (${today}) o successivamente.`
-    : 'Non includere blocchi di studio (study_windows deve essere array vuoto []).';
+  // Build time slot rules from user preferences
+  const slots = studyPrefs ? [
+    studyPrefs.morning   && { label: 'mattina',     start: '09:00', end: '12:00' },
+    studyPrefs.afternoon && { label: 'pomeriggio',  start: '14:00', end: '18:00' },
+    studyPrefs.evening   && { label: 'sera',        start: '19:00', end: '22:00' },
+  ].filter(Boolean) : [{ label: 'mattina', start: '09:00', end: '11:00' }];
 
-  const prefsNote = studyPrefs
-    ? `Preferenze studio dell'utente:
-- Orari preferiti: ${[studyPrefs.morning && 'mattina (9-12)', studyPrefs.afternoon && 'pomeriggio (14-18)', studyPrefs.evening && 'sera (19-22)'].filter(Boolean).join(', ') || 'non specificati'}
-- Durata sessione: ${studyPrefs.sessionHours} ore di studio consecutivo poi pausa
-Tieni conto di questi orari nella label dei blocchi di studio (es. "Mattina: ripasso capitoli 1-4 · 2h").`
-    : '';
+  const sessionH = studyPrefs?.sessionHours ?? 2;
+  const slotDesc = slots.map((s) => `${s.label} (${s.start}–${s.end})`).join(', ');
+
+  const studyBlocksRule = includeStudyBlocks
+    ? `Per ogni piano includi finestre di studio ottimali.
+Durata intervallo: effort 7-10 → 10-15 giorni prima dell'esame, effort 4-6 → 5-9 giorni, effort 1-3 → 2-4 giorni.
+La finestra deve finire almeno 1 giorno prima dell'esame. Inizia da oggi (${today}) o successivamente.
+Ogni study_window rappresenta UNA sessione giornaliera ripetuta per tutti i giorni dell'intervallo.
+Fasce orarie disponibili: ${slotDesc}. Durata sessione: ${sessionH}h.
+Scegli start_time e end_time dall'elenco delle fasce disponibili. Se ci sono più fasce, usa quella più adatta al tipo di materia (es. mattina per materie difficili, pomeriggio/sera per ripasso leggero).
+Il campo label deve descrivere COSA studiare (es. "Reti: ripasso protocolli TCP/IP e routing · capitoli 3-5"), NON l'orario (quello va in start_time/end_time).`
+    : 'Non includere blocchi di studio (study_windows deve essere array vuoto []).';
 
   const systemPrompt = `Sei un assistente accademico esperto in pianificazione della sessione universitaria italiana.
 Data di oggi: ${today}.
@@ -177,11 +186,10 @@ Regole scelta date:
 - Le 3 alternative devono differire realmente nell'ordine e nella scelta delle date
 
 ${studyBlocksRule}
-${prefsNote}
 
 Rispondi SOLO con JSON valido, senza markdown.`;
 
-  const userPrompt = `Esami disponibili:\n${examSummaries}\n\nPreferenze utente: "${preferences || 'Nessuna preferenza specifica'}"\n\nRestituisci:\n{"plans": [{"description": "breve razionale del piano", "date_picks": [{"examId": "...", "componentName": "...", "date": "YYYY-MM-DD"}], "study_windows": [{"examId": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "label": "..."}]}]}`;
+  const userPrompt = `Esami disponibili:\n${examSummaries}\n\nPreferenze utente: "${preferences || 'Nessuna preferenza specifica'}"\n\nRestituisci:\n{"plans": [{"description": "breve razionale del piano", "date_picks": [{"examId": "...", "componentName": "...", "date": "YYYY-MM-DD"}], "study_windows": [{"examId": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "start_time": "HH:MM", "end_time": "HH:MM", "label": "descrizione cosa studiare"}]}]}`;
 
   const response = await fetch(GROQ_API_URL, {
     method: 'POST',
@@ -210,20 +218,42 @@ Rispondi SOLO con JSON valido, senza markdown.`;
   const parsed = JSON.parse(content);
   const plans = parsed.plans || (Array.isArray(parsed) ? parsed : []);
 
-  return plans.slice(0, 3).map((plan) => ({
-    description: plan.description || '',
-    date_picks: (plan.date_picks || []).map((p) => ({
-      examId: p.examId,
-      componentName: p.componentName,
-      date: p.date,
-    })),
-    study_windows: (plan.study_windows || []).map((w) => ({
-      examId: w.examId,
-      start: w.start,
-      end: w.end,
-      label: w.label || 'Studio',
-    })),
-  }));
+  // Helper: given a slot start + session hours, compute actual end time (capped at slot end)
+  function resolveEndTime(startStr, slotEndStr, sessionH) {
+    const s = parseTimeStr(startStr) ?? 9;
+    const slotEnd = parseTimeStr(slotEndStr) ?? (s + sessionH);
+    const end = Math.min(slotEnd, s + sessionH);
+    const h = Math.floor(end);
+    const m = Math.round((end - h) * 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  return plans.slice(0, 3).map((plan) => {
+    // Cycle through available slots for windows that lack AI-assigned times
+    let slotIdx = 0;
+    return {
+      description: plan.description || '',
+      date_picks: (plan.date_picks || []).map((p) => ({
+        examId: p.examId,
+        componentName: p.componentName,
+        date: p.date,
+      })),
+      study_windows: (plan.study_windows || []).map((w) => {
+        const slot = slots[slotIdx % slots.length];
+        slotIdx++;
+        const startT = w.start_time || slot.start;
+        const endT   = w.end_time   || resolveEndTime(slot.start, slot.end, sessionH);
+        return {
+          examId: w.examId,
+          start: w.start,
+          end: w.end,
+          start_time: startT,
+          end_time: endT,
+          label: w.label || 'Studio',
+        };
+      }),
+    };
+  });
 }
 
 export async function generateStudyPlan(exams) {

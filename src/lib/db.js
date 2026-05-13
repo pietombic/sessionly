@@ -14,14 +14,21 @@ function reviveExam(data) {
 }
 
 function reviveWindows(rows) {
-  return rows.map((r) => ({
-    id: r.id,
-    examId: r.exam_id,
-    start: new Date(r.start_date + 'T00:00:00'),
-    end: new Date(r.end_date + 'T00:00:00'),
-    label: r.label || '',
-    completed: r.completed || false,
-  }));
+  return rows.map((r) => {
+    const raw = r.label || '';
+    // Encoded format: "HH:MM-HH:MM|label text"
+    const m = raw.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})\|(.*)$/);
+    return {
+      id: r.id,
+      examId: r.exam_id,
+      start: new Date(r.start_date + 'T00:00:00'),
+      end: new Date(r.end_date + 'T00:00:00'),
+      startTime: m ? m[1] : null,
+      endTime:   m ? m[2] : null,
+      label: m ? m[3] : raw,
+      completed: r.completed || false,
+    };
+  });
 }
 
 function fmtDate(date) {
@@ -82,7 +89,9 @@ export async function replaceStudyWindows(windows) {
     exam_id: w.examId,
     start_date: fmtDate(w.start),
     end_date: fmtDate(w.end),
-    label: w.label,
+    label: w.startTime && w.endTime
+      ? `${w.startTime}-${w.endTime}|${w.label}`
+      : w.label,
     completed: false,
   }));
 
