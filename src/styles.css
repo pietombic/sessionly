@@ -1860,6 +1860,19 @@ textarea.input {
   font-size: 14px;
 }
 
+.email-confirmed-badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-deep);
+  margin-bottom: 4px;
+}
+
 .landing-steps {
   margin-top: 24px;
   display: grid;

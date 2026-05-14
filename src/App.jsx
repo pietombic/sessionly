@@ -23,6 +23,7 @@ import { StudyTimeline } from './components/StudyTimeline.jsx';
 import { usePomodoroTimer, PomodoroFab, PomodoroView } from './components/PomodoroTimer.jsx';
 import { ImageImportModal } from './components/ImageImportModal.jsx';
 import { HelpModal } from './components/HelpModal.jsx';
+import { EmailConfirmedScreen } from './components/EmailConfirmedScreen.jsx';
 
 const TWEAKS_LS_KEY = 'sessionly-tweaks';
 
@@ -98,6 +99,11 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showEmailConfirmed, setShowEmailConfirmed] = useState(() => {
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const query = new URLSearchParams(window.location.search);
+    return hash.get('type') === 'signup' || query.get('type') === 'signup';
+  });
 
   // ── App data ───────────────────────────────────────────────────────────────
   const [exams, setExams] = useState([]);
@@ -366,6 +372,17 @@ export default function App() {
         <LandingScreen onOpenAuth={() => setShowAuthModal(true)} />
         {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
       </>
+    );
+  }
+
+  if (showEmailConfirmed) {
+    return (
+      <EmailConfirmedScreen
+        onContinue={() => {
+          history.replaceState(null, '', window.location.pathname);
+          setShowEmailConfirmed(false);
+        }}
+      />
     );
   }
 
