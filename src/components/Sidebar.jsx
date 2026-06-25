@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { TAG_CSS } from '../data.js';
 import { startOfDay, formatDueLabel } from '../utils/dates.js';
 import { Dots, LoadBadge, StatusBadge } from './ui/index.jsx';
@@ -42,6 +43,15 @@ function ExamCard({ exam, today, selected, planned, datePicks, onClick }) {
       className={`exam-card ${selected ? 'selected' : ''} ${!planned && !isDone ? 'unplanned' : ''} ${isDone ? 'done' : ''}`}
       style={{ '--tag': TAG_CSS[exam.tag] }}
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={`Apri ${exam.name}`}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
     >
       <span className="tag-bar" />
       {grade && <span className="exam-grade">{grade}</span>}
@@ -79,11 +89,18 @@ function ExamCard({ exam, today, selected, planned, datePicks, onClick }) {
   );
 }
 
-export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selectedId, onSelect, onAdd, onImportImage, onHelp }) {
+export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selectedId, onSelect, onAdd, onImportImage, onHelp, user, onOpenSettings }) {
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('active');
   const plannedIds = new Set(studyWindows.map((w) => w.examId));
+  const normalizedQuery = query.trim().toLocaleLowerCase('it');
+  const matchesQuery = (exam) => !normalizedQuery
+    || exam.name.toLocaleLowerCase('it').includes(normalizedQuery)
+    || exam.components.some((component) => component.name.toLocaleLowerCase('it').includes(normalizedQuery));
 
   const activeExams = exams
-    .filter((e) => !DONE_STATUSES.has(e.status))
+    .filter((e) => !DONE_STATUSES.has(e.status) && matchesQuery(e))
+    .filter((e) => filter !== 'planned' || plannedIds.has(e.id))
     .slice()
     .sort((a, b) => {
       const da = getEffectiveDate(a, datePicks, today);
@@ -94,7 +111,10 @@ export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selec
       return da - db;
     });
 
-  const doneExams = exams.filter((e) => DONE_STATUSES.has(e.status));
+  const doneExams = exams.filter((e) => DONE_STATUSES.has(e.status) && matchesQuery(e));
+  const showActive = filter !== 'done';
+  const showDone = filter === 'all' || filter === 'done';
+  const visibleCount = (showActive ? activeExams.length : 0) + (showDone ? doneExams.length : 0);
 
   return (
     <aside className="sidebar">
@@ -106,11 +126,9 @@ export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selec
       <div className="sidebar-toolbar">
         <h2>
           Lista esami{' '}
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-soft)', marginLeft: 6 }}>
-            · {exams.length}
-          </span>
+          <span className="sidebar-exam-count">{exams.length}</span>
         </h2>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div className="sidebar-toolbar-actions">
           <button
             className="import-img-btn"
             onClick={onHelp}
@@ -138,6 +156,42 @@ export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selec
         </div>
       </div>
 
+      {exams.length > 0 && (
+        <div className="sidebar-discovery">
+          <label className="sidebar-search">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Cerca esame…"
+              aria-label="Cerca tra gli esami"
+            />
+            {query && <button onClick={() => setQuery('')} aria-label="Cancella ricerca">×</button>}
+          </label>
+          <div className="sidebar-filters" role="group" aria-label="Filtra esami">
+            {[
+              ['active', 'Attivi'],
+              ['planned', 'Pianificati'],
+              ['done', 'Conclusi'],
+              ['all', 'Tutti'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                className={filter === value ? 'is-active' : ''}
+                onClick={() => setFilter(value)}
+                aria-pressed={filter === value}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {exams.length === 0 ? (
         <div className="sidebar-empty">
           <span className="glyph">∅</span>
@@ -148,7 +202,7 @@ export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selec
         </div>
       ) : (
         <div className="exam-list scroll">
-          {activeExams.map((e) => (
+          {showActive && activeExams.map((e) => (
             <ExamCard
               key={e.id}
               exam={e}
@@ -160,13 +214,13 @@ export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selec
             />
           ))}
 
-          {studyWindows.length === 0 && activeExams.length > 0 && doneExams.length === 0 && (
+          {showActive && studyWindows.length === 0 && activeExams.length > 0 && doneExams.length === 0 && (
             <div className="sidebar-plan-hint">
               Premi <strong>Piano AI</strong> per pianificare gli esami
             </div>
           )}
 
-          {doneExams.length > 0 && (
+          {showDone && doneExams.length > 0 && (
             <>
               <div className="done-separator">
                 <span>Completati</span>
@@ -184,21 +238,29 @@ export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selec
               ))}
             </>
           )}
+          {visibleCount === 0 && (
+            <div className="sidebar-no-results">
+              <span>∅</span>
+              <strong>Nessun esame trovato</strong>
+              <small>Prova a cambiare ricerca o filtro.</small>
+            </div>
+          )}
         </div>
       )}
 
       <div className="sidebar-footer">
-        <a
-          href="https://github.com/pietombic/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="sidebar-credit"
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
-            <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+        <button className="sidebar-account-button" onClick={onOpenSettings}>
+          <span className="sidebar-account-avatar">
+            {user?.email?.[0]?.toUpperCase() || 'U'}
+          </span>
+          <span className="sidebar-account-copy">
+            <strong>{user?.email || 'Account'}</strong>
+            <small>Account e impostazioni</small>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 18l6-6-6-6" />
           </svg>
-          pietombic
-        </a>
+        </button>
       </div>
     </aside>
   );

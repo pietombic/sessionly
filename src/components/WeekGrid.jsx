@@ -1,11 +1,11 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { TAG_CSS } from '../data.js';
-import { WEEKDAYS_IT, sameDay, startOfDay, formatLongDate, loadScore } from '../utils/dates.js';
+import { WEEKDAYS_IT, sameDay, formatLongDate, loadScore } from '../utils/dates.js';
 import { useTooltip, Tooltip } from './ui/index.jsx';
 
-const START_HOUR = 7;
-const END_HOUR = 23;
-const TOTAL_HOURS = END_HOUR - START_HOUR; // 16
+const START_HOUR = 5;
+const END_HOUR = 24; // represents midnight (00:00 of the next day)
+const TOTAL_HOURS = END_HOUR - START_HOUR; // 19
 const HOUR_PX = 52; // px per hour
 const GRID_HEIGHT = TOTAL_HOURS * HOUR_PX;
 
@@ -21,17 +21,8 @@ function parseTimeStr(str) {
   return parseInt(m[1]) + parseInt(m[2]) / 60;
 }
 
-// Resolve study block slot from stored times (with sensible fallback)
-function resolveSlot(st) {
-  const s = parseTimeStr(st.startTime);
-  const e = parseTimeStr(st.endTime);
-  if (s !== null && e !== null) return { start: s, end: e };
-  // Legacy fallback for blocks saved before time encoding
-  const l = (st.label || '').toLowerCase();
-  if (l.includes('mattina'))    return { start: 9,  end: 12 };
-  if (l.includes('pomeriggio')) return { start: 14, end: 18 };
-  if (l.includes('sera'))       return { start: 19, end: 22 };
-  return { start: 9, end: 11 };
+function fmtHM(d) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function isPicked(ev, datePicks) {
@@ -41,7 +32,7 @@ function isPicked(ev, datePicks) {
   );
 }
 
-function buildWeekBuckets(cells, exams, studyWindows, datePicks, showAllDates) {
+function buildWeekBuckets(cells, exams, sessions, datePicks, showAllDates) {
   const buckets = new Map();
   for (const c of cells) buckets.set(c.date.toDateString(), { events: [], studies: [] });
 
@@ -59,21 +50,28 @@ function buildWeekBuckets(cells, exams, studyWindows, datePicks, showAllDates) {
     }
   }
 
-  for (const sw of studyWindows) {
-    const exam = exams.find((e) => e.id === sw.examId);
+  // Ogni sessione è una riga `events` indipendente, posizionata al suo orario reale.
+  for (const s of sessions) {
+    if (s.type !== 'study') continue;
+    const exam = exams.find((e) => e.id === s.exam_id);
     if (!exam) continue;
-    for (const c of cells) {
-      const d = startOfDay(c.date);
-      if (d >= startOfDay(sw.start) && d <= startOfDay(sw.end)) {
-        const key = c.date.toDateString();
-        buckets.get(key).studies.push({
-          id: sw.id,
-          exam,
-          label: sw.label,
-          completed: sw.completed || false,
-        });
-      }
-    }
+    const start = new Date(s.start_time);
+    const end   = new Date(s.end_time);
+    const key   = start.toDateString();
+    if (!buckets.has(key)) continue;
+    buckets.get(key).studies.push({
+      id: s.id,
+      exam,
+      label: s.notes || '',
+      notes: s.notes || '',
+      completed: s.status === 'completed',
+      startHour: start.getHours() + start.getMinutes() / 60,
+      endHour:   end.getHours() + end.getMinutes() / 60,
+      startTime: fmtHM(start),
+      endTime:   fmtHM(end),
+      startISO:  start.toISOString(),
+      endISO:    end.toISOString(),
+    });
   }
   return buckets;
 }
@@ -96,8 +94,114 @@ function assignColumns(items) {
   });
 }
 
-export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete, onRemoveStudyWindow }) {
-  const scrollRef = useRef(null);
+export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete, onRemoveStudyWindow, onOpenEventDetail, onMoveSession }) {
+  const gridBodyRef = useRef(null);
+  const dragRef = useRef(null);
+  const suppressClickRef = useRef(false);
+  const [dragPreview, setDragPreview] = useState({});
+
+  // Current time state — updated every minute
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Mobile detection: show 3 days instead of 7 on narrow viewports
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const rawDelta = ((event.clientY - drag.pointerY) / HOUR_PX) * 60;
+      const deltaMinutes = Math.round(rawDelta / 15) * 15;
+      let startMinutes = drag.startMinutes;
+      let endMinutes = drag.endMinutes;
+
+      if (drag.mode === 'move') {
+        const duration = drag.endMinutes - drag.startMinutes;
+        startMinutes = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - duration, drag.startMinutes + deltaMinutes));
+        endMinutes = startMinutes + duration;
+      } else {
+        endMinutes = Math.max(startMinutes + 15, Math.min(END_HOUR * 60, drag.endMinutes + deltaMinutes));
+      }
+
+      suppressClickRef.current = Math.abs(deltaMinutes) >= 15;
+      setDragPreview((current) => ({
+        ...current,
+        [drag.id]: { startHour: startMinutes / 60, endHour: endMinutes / 60 },
+      }));
+    };
+
+    const handlePointerUp = () => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const preview = dragPreview[drag.id];
+      dragRef.current = null;
+      if (!preview || !suppressClickRef.current) {
+        setDragPreview((current) => {
+          const next = { ...current };
+          delete next[drag.id];
+          return next;
+        });
+        return;
+      }
+
+      const start = new Date(drag.startISO);
+      const end = new Date(drag.endISO);
+      const startMinutes = Math.round(preview.startHour * 60);
+      const endMinutes = Math.round(preview.endHour * 60);
+      start.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+      end.setHours(Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
+      onMoveSession?.(drag.id, {
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+      });
+      setDragPreview((current) => {
+        const next = { ...current };
+        delete next[drag.id];
+        return next;
+      });
+      window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [dragPreview, onMoveSession]);
+
+  const startDrag = (event, session, mode) => {
+    if (isMobile || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const start = new Date(session.startISO);
+    const end = new Date(session.endISO);
+    dragRef.current = {
+      id: session.id,
+      mode,
+      pointerY: event.clientY,
+      startMinutes: start.getHours() * 60 + start.getMinutes(),
+      endMinutes: end.getHours() * 60 + end.getMinutes(),
+      startISO: session.startISO,
+      endISO: session.endISO,
+    };
+    suppressClickRef.current = false;
+    setDragPreview((current) => ({
+      ...current,
+      [session.id]: { startHour: session.startHour, endHour: session.endHour },
+    }));
+  };
 
   const cells = useMemo(() =>
     Array.from({ length: 7 }, (_, i) => {
@@ -106,17 +210,28 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
     }),
   [weekStart]);
 
+  // On mobile, show only 3 days centred on today (or on the first day of the week
+  // if today is not in this week)
+  const visibleCells = useMemo(() => {
+    if (!isMobile) return cells;
+    const todayIdx = cells.findIndex((c) => sameDay(c.date, today));
+    const centerIdx = todayIdx !== -1 ? todayIdx : 0;
+    const start = Math.max(0, Math.min(centerIdx - 1, cells.length - 3));
+    return cells.slice(start, start + 3);
+  }, [isMobile, cells, today]);
+
   const buckets = useMemo(
-    () => buildWeekBuckets(cells, exams, studyWindows, datePicks, showAllDates),
-    [cells, exams, studyWindows, datePicks, showAllDates]
+    () => buildWeekBuckets(cells, exams, events, datePicks, showAllDates),
+    [cells, exams, events, datePicks, showAllDates]
   );
 
-  // Scroll to 8:00 on mount
+  // Auto-scroll to 7:00 on mount / week change
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = timeToY(8) - 16;
-    }
-  }, []);
+    if (!gridBodyRef.current) return;
+    const targetHour = 7; // scroll to 7am
+    const yOffset = (targetHour - START_HOUR) * HOUR_PX;
+    gridBodyRef.current.scrollTo({ top: yOffset, behavior: 'instant' });
+  }, [weekStart]);
 
   const { tt, show, move, hide } = useTooltip();
 
@@ -139,7 +254,7 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
       {st.startTime && st.endTime && (
         <div className="ttline"><span className="l">Orario</span><span>{st.startTime} – {st.endTime}</span></div>
       )}
-      <div className="ttline"><span className="l">Focus</span><span>{st.label}</span></div>
+      {st.label && <div className="ttline"><span className="l">Focus</span><span>{st.label}</span></div>}
       <div className="ttline">
         <span className="l">Carico</span>
         <span>{loadScore(st.exam.effort, st.exam.difficulty).label}</span>
@@ -148,18 +263,27 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
     </>
   ));
 
-  const nowHour = today.getHours() + today.getMinutes() / 60;
+  // Current-time line position
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const startMinutes = START_HOUR * 60;
+  const nowY = ((nowMinutes - startMinutes) / 60) * HOUR_PX;
+  const nowHour = now.getHours() + now.getMinutes() / 60;
 
   return (
     <div className={`cal-wrap study-style-${studyStyle}`}>
-      {/* Day headers */}
-      <div className="cal-weekrow week-tg-header">
+      {/* Day headers — sticky so they stay visible during vertical scroll */}
+      <div
+        className="cal-weekrow week-tg-header"
+        style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--paper)' }}
+      >
         <div className="week-tg-axis-gap" />
-        {cells.map((c, i) => {
+        {visibleCells.map((c, i) => {
           const isToday = sameDay(c.date, today);
+          // Map visible cell back to its original weekday index
+          const origIdx = cells.indexOf(c);
           return (
-            <div key={i} className={`wd week-day-hd ${isToday ? 'week-day-hd-today' : ''}`}>
-              <span>{WEEKDAYS_IT[i]}</span>
+            <div key={origIdx} className={`wd week-day-hd ${isToday ? 'week-day-hd-today' : ''}`}>
+              <span>{WEEKDAYS_IT[origIdx]}</span>
               <span className={`week-day-num ${isToday ? 'week-day-num-today' : ''}`}>
                 {c.date.getDate()}
               </span>
@@ -168,25 +292,35 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
         })}
       </div>
 
-      {/* Scrollable time grid */}
-      <div className="week-tg-scroll scroll" ref={scrollRef}>
+      {/* Scrollable time grid body */}
+      <div
+        className="week-tg-scroll scroll"
+        ref={gridBodyRef}
+      >
         <div className="week-tg" style={{ height: GRID_HEIGHT }}>
 
-          {/* Time axis */}
-          <div className="week-tg-axis">
-            {Array.from({ length: TOTAL_HOURS }, (_, i) => (
-              <div
-                key={i}
-                className="week-tg-hour-label"
-                style={{ top: i * HOUR_PX }}
-              >
-                {String(START_HOUR + i).padStart(2, '0')}:00
-              </div>
-            ))}
+          {/* Time axis — sticky on horizontal scroll */}
+          <div
+            className="week-tg-axis"
+            style={{ position: 'sticky', left: 0, zIndex: 9, background: 'var(--paper)' }}
+          >
+            {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => {
+              const h = START_HOUR + i;
+              if (h > END_HOUR) return null;
+              return (
+                <div
+                  key={i}
+                  className="week-tg-hour-label"
+                  style={{ top: i * HOUR_PX }}
+                >
+                  {h === 24 ? '00:00' : String(h).padStart(2, '0') + ':00'}
+                </div>
+              );
+            })}
           </div>
 
           {/* Day columns */}
-          {cells.map((c, ci) => {
+          {visibleCells.map((c, ci) => {
             const key = c.date.toDateString();
             const b = buckets.get(key) || { events: [], studies: [] };
             const isToday = sameDay(c.date, today);
@@ -202,8 +336,13 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
                 return { type: 'event', ev, start, end };
               }),
               ...b.studies.map((st) => {
-                const { start, end } = resolveSlot(st);
-                return { type: 'study', st, start, end };
+                const preview = dragPreview[st.id];
+                return {
+                  type: 'study',
+                  st,
+                  start: preview?.startHour ?? st.startHour,
+                  end: preview?.endHour ?? st.endHour,
+                };
               }),
             ];
 
@@ -230,7 +369,10 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
 
                 {/* Current time indicator */}
                 {isToday && nowHour >= START_HOUR && nowHour <= END_HOUR && (
-                  <div className="week-tg-now" style={{ top: timeToY(nowHour) }} />
+                  <div
+                    className="week-now-line"
+                    style={{ position: 'absolute', top: nowY, left: 0, right: 0, zIndex: 5, pointerEvents: 'none' }}
+                  />
                 )}
 
                 {/* Conflict pip */}
@@ -259,7 +401,18 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
                         onMouseEnter={(e) => showEvent(e, ev)}
                         onMouseMove={move}
                         onMouseLeave={hide}
-                        onClick={() => onSelectExam(ev.exam.id)}
+                        onClick={() => onOpenEventDetail
+                          ? onOpenEventDetail({
+                              type: 'exam',
+                              examId: ev.exam.id,
+                              examName: ev.exam.name,
+                              componentName: ev.component,
+                              date: ev.date.date,
+                              time: ev.date.time || '',
+                              room: ev.date.room || '',
+                              locked: ev.date.locked || false,
+                            })
+                          : onSelectExam(ev.exam.id)}
                       >
                         {ev.locked && <span className="lock">🔒</span>}
                         <span className="tg-event-comp">{ev.component}</span>
@@ -286,7 +439,26 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
                       onMouseEnter={(e) => showStudy(e, st)}
                       onMouseMove={move}
                       onMouseLeave={hide}
-                      onClick={() => onToggleStudyComplete?.(st.id)}
+                      onPointerDown={(event) => startDrag(event, st, 'move')}
+                      onClick={() => {
+                        if (suppressClickRef.current) return;
+                        if (onOpenEventDetail) {
+                          onOpenEventDetail({
+                            type: 'session',
+                            eventId: st.id,
+                            examName: st.exam.name,
+                            label: st.label || '',
+                            notes: st.notes || '',
+                            completed: st.completed,
+                            startTime: st.startTime || null,
+                            endTime: st.endTime || null,
+                            startISO: st.startISO,
+                            endISO: st.endISO,
+                          });
+                        } else {
+                          onToggleStudyComplete?.(st.id);
+                        }
+                      }}
                       title={st.completed ? 'Completato · clicca per annullare' : 'Clicca per segnare come completato'}
                     >
                       <span className="tg-event-comp">
@@ -296,13 +468,22 @@ export function WeekGrid({ weekStart, exams, studyWindows, datePicks = [], showA
                       <span className="tg-event-name" style={{ textDecoration: st.completed ? 'line-through' : 'none' }}>
                         {st.exam.name}
                       </span>
-                      <span className="tg-event-time">{st.label}</span>
+                      {st.label && <span className="tg-event-time">{st.label}</span>}
                       <button
                         className="study-remove-btn"
+                        onPointerDown={(event) => event.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); onRemoveStudyWindow?.(st.id); }}
                         title="Rimuovi sessione"
                         aria-label="Rimuovi sessione di studio"
                       >×</button>
+                      {!isMobile && (
+                        <span
+                          className="session-resize-handle"
+                          onPointerDown={(event) => startDrag(event, st, 'resize')}
+                          title="Trascina per cambiare la durata"
+                          aria-hidden="true"
+                        />
+                      )}
                     </div>
                   );
                 })}

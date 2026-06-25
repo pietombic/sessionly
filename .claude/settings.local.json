@@ -13,7 +13,19 @@
       "Bash(npm install *)",
       "Bash(npm run *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
-      "Bash(pkill -f \"vite\")"
+      "Bash(pkill -f \"vite\")",
+      "Bash(grep -i \"\\\\.\\(jsx\\\\|js\\\\|tsx\\\\|ts\\)$\")",
+      "Bash(npx vite *)",
+      "Bash(xargs cat)",
+      "Bash(git -C /Users/pietrotombaccini/Coding/sessionly/.claude/worktrees/agent-ae3ecbd522d22cbc3 diff HEAD~1 --stat)",
+      "Bash(git -C /Users/pietrotombaccini/Coding/sessionly/.claude/worktrees/agent-ad5db74a19e22208e diff HEAD~1 --stat)",
+      "Bash(git -C /Users/pietrotombaccini/Coding/sessionly/.claude/worktrees/agent-ae3ecbd522d22cbc3 status)",
+      "Bash(git -C /Users/pietrotombaccini/Coding/sessionly/.claude/worktrees/agent-ad5db74a19e22208e status)",
+      "Bash(git -C /Users/pietrotombaccini/Coding/sessionly diff -- src/components/AIPlanModal.jsx src/utils/groq.js src/components/WeekGrid.jsx)",
+      "Bash(git -C /Users/pietrotombaccini/Coding/sessionly diff -- src/utils/groq.js)",
+      "Bash(git -C /Users/pietrotombaccini/Coding/sessionly diff --stat)",
+      "Bash(curl -s http://localhost:5174/)",
+      "Bash(pkill -f \"vite --port 5174\")"
     ]
   }
 }

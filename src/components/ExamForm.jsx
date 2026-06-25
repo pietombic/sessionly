@@ -22,6 +22,8 @@ const blank = {
   type: 'scritto-orale',
   effort: 5,
   difficulty: 5,
+  cfu: '',
+  openBook: false,
   priority: 'media',
   status: 'todo',
   grade: null,
@@ -33,6 +35,7 @@ const blank = {
   pages: '',
   pdfCount: '',
   topics: '',
+  materialDesc: '',
   components: [
     { name: 'Scritto', dates: [{ id: 'n1', date: null, time: '', room: '', locked: false }] },
     { name: 'Orale',   dates: [{ id: 'n2', date: null, time: '', room: '', locked: false }] },
@@ -56,7 +59,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
 
   // ── voice / AI section ──────────────────────────────────────────────────
   const [showProgramDetails, setShowProgramDetails] = useState(
-    !!(initial?.topics || initial?.pages || initial?.examApproach)
+    !!(initial?.topics || initial?.pages || initial?.examApproach || initial?.materialDesc)
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
@@ -196,7 +199,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal--form" onClick={(e) => e.stopPropagation()}>
         <div className="modal-hd">
           <div>
             <h2>{isEditing ? draft.name || 'Modifica esame' : 'Nuovo esame'}</h2>
@@ -357,6 +360,43 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
             </div>
           </div>
 
+          {/* ── CFU & Open Book ─────────────────── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="field">
+              <label className="field-label">CFU</label>
+              <input
+                type="number"
+                className="input mono"
+                min={1}
+                max={30}
+                placeholder="es. 9"
+                value={draft.cfu}
+                onChange={(e) => set({ cfu: e.target.value })}
+              />
+              <div className="field-hint">1 CFU ≈ 25 ore di studio</div>
+            </div>
+            <div className="field">
+              <label className="field-label">Open Book</label>
+              <div className="pills">
+                <button
+                  type="button"
+                  className={`pill ${draft.openBook ? 'on' : ''}`}
+                  onClick={() => set({ openBook: true })}
+                >
+                  Consentito
+                </button>
+                <button
+                  type="button"
+                  className={`pill ${!draft.openBook ? 'on' : ''}`}
+                  onClick={() => set({ openBook: false })}
+                >
+                  Chiuso
+                </button>
+              </div>
+              <div className="field-hint">Puoi portare appunti cartacei all'esame</div>
+            </div>
+          </div>
+
           {/* ── parziali ─────────────────────────── */}
           {hasParziali && (
             <div className="field" style={{
@@ -499,7 +539,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
             >
               <span>{showProgramDetails ? '▾' : '▸'}</span>
               Dettagli programma
-              {(draft.examApproach || draft.pages || draft.topics) && (
+              {(draft.examApproach || draft.pages || draft.topics || draft.materialDesc) && (
                 <span className="program-details-dot" />
               )}
             </button>
@@ -566,6 +606,18 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                     onChange={(e) => set({ topics: e.target.value })}
                   />
                   <div className="field-hint">L'AI dividerà questi argomenti nelle sessioni di studio.</div>
+                </div>
+
+                <div className="field">
+                  <label className="field-label">Materiale di studio</label>
+                  <textarea
+                    className="input"
+                    style={{ minHeight: 72 }}
+                    placeholder={'es. Libro di testo (Cormen), 8 slide del prof, raccolta esercizi anni passati…'}
+                    value={draft.materialDesc}
+                    onChange={(e) => set({ materialDesc: e.target.value })}
+                  />
+                  <div className="field-hint">Descrivi cosa hai a disposizione: libri, slide, esercizi, video…</div>
                 </div>
               </div>
             )}

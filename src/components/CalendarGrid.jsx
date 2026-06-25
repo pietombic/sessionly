@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { TAG_CSS } from '../data.js';
-import { WEEKDAYS_IT, monthGrid, sameDay, startOfDay, formatLongDate, loadScore } from '../utils/dates.js';
+import { WEEKDAYS_IT, monthGrid, sameDay, formatLongDate, loadScore } from '../utils/dates.js';
 import { useTooltip, Tooltip } from './ui/index.jsx';
 
 function EventChip({ ev, onHover, onMove, onLeave, onClick }) {
@@ -12,6 +12,14 @@ function EventChip({ ev, onHover, onMove, onLeave, onClick }) {
       onMouseMove={onMove}
       onMouseLeave={onLeave}
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
     >
       {ev.locked && <span className="lock">🔒</span>}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -31,11 +39,20 @@ function StudyBlock({ st, onHover, onMove, onLeave, onClick }) {
       onMouseMove={onMove}
       onMouseLeave={onLeave}
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       title={st.completed ? 'Completato · clicca per annullare' : 'Clicca per segnare come completato'}
     >
-      <span className="stype">{st.completed ? '✓' : 'Studia'}</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: st.completed ? 'line-through' : 'none' }}>
-        {st.exam.name.split(' ')[0]}
+      <span className="study-color-dot" aria-hidden="true" />
+      <span className="stype">{st.completed ? 'Fatto' : 'Studio'}</span>
+      <span className="study-name" style={{ textDecoration: st.completed ? 'line-through' : 'none' }}>
+        {st.exam.name}
       </span>
     </div>
   );
@@ -48,7 +65,7 @@ function isPicked(ev, datePicks) {
   );
 }
 
-function buildBuckets(cells, exams, studyWindows, datePicks, showAllDates) {
+function buildBuckets(cells, exams, sessions, datePicks, showAllDates) {
   const buckets = new Map();
   for (const c of cells) buckets.set(c.date.toDateString(), { events: [], studies: [] });
 
@@ -66,33 +83,36 @@ function buildBuckets(cells, exams, studyWindows, datePicks, showAllDates) {
     }
   }
 
-  for (const sw of studyWindows) {
-    const exam = exams.find((e) => e.id === sw.examId);
+  // Ogni sessione è una riga `events` indipendente, sul suo giorno reale.
+  for (const s of sessions) {
+    if (s.type !== 'study') continue;
+    const exam = exams.find((e) => e.id === s.exam_id);
     if (!exam) continue;
-    for (const c of cells) {
-      const d = startOfDay(c.date);
-      if (d >= startOfDay(sw.start) && d <= startOfDay(sw.end)) {
-        const key = c.date.toDateString();
-        buckets.get(key).studies.push({
-          id: sw.id,
-          exam,
-          label: sw.label,
-          completed: sw.completed || false,
-          isStart: sameDay(c.date, sw.start),
-          isEnd: sameDay(c.date, sw.end),
-        });
-      }
-    }
+    const start = new Date(s.start_time);
+    const end = new Date(s.end_time);
+    const key = start.toDateString();
+    if (!buckets.has(key)) continue;
+    buckets.get(key).studies.push({
+      id: s.id,
+      exam,
+      label: s.notes || '',
+      notes: s.notes || '',
+      completed: s.status === 'completed',
+      startTime: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+      endTime: `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`,
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+    });
   }
 
   return buckets;
 }
 
-export function CalendarGrid({ year, month, exams, studyWindows, datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete }) {
+export function CalendarGrid({ year, month, exams, events = [], datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete, onOpenEventDetail, onOpenDaySummary }) {
   const allCells = useMemo(() => monthGrid(year, month), [year, month]);
   const buckets = useMemo(
-    () => buildBuckets(allCells, exams, studyWindows, datePicks, showAllDates),
-    [allCells, exams, studyWindows, datePicks, showAllDates]
+    () => buildBuckets(allCells, exams, events, datePicks, showAllDates),
+    [allCells, exams, events, datePicks, showAllDates]
   );
   const { tt, show, move, hide } = useTooltip();
 
@@ -112,7 +132,7 @@ export function CalendarGrid({ year, month, exams, studyWindows, datePicks = [],
   const showStudy = (e, st) => show(e, (
     <>
       <h4>Studio · {st.exam.name}</h4>
-      <div className="ttline"><span className="l">Suggerito</span><span>{st.label}</span></div>
+      {st.label && <div className="ttline"><span className="l">Suggerito</span><span>{st.label}</span></div>}
       <div className="ttline">
         <span className="l">Carico</span>
         <span>{loadScore(st.exam.effort, st.exam.difficulty).label}</span>
@@ -134,12 +154,7 @@ export function CalendarGrid({ year, month, exams, studyWindows, datePicks = [],
           const examsHere = new Set(b.events.map((e) => e.exam.id));
           const conflict = examsHere.size >= 2;
 
-          const seen = new Set();
-          const studies = b.studies.filter((s) => {
-            if (seen.has(s.exam.id)) return false;
-            seen.add(s.exam.id);
-            return true;
-          });
+          const studies = b.studies;
 
           const allChildren = [
             ...b.events.map((ev, idx) => (
@@ -149,7 +164,18 @@ export function CalendarGrid({ year, month, exams, studyWindows, datePicks = [],
                 onHover={showEvent}
                 onMove={move}
                 onLeave={hide}
-                onClick={() => onSelectExam(ev.exam.id)}
+                onClick={() => onOpenEventDetail
+                  ? onOpenEventDetail({
+                      type: 'exam',
+                      examId: ev.exam.id,
+                      examName: ev.exam.name,
+                      componentName: ev.component,
+                      date: ev.date.date,
+                      time: ev.date.time || '',
+                      room: ev.date.room || '',
+                      locked: ev.date.locked || false,
+                    })
+                  : onSelectExam(ev.exam.id)}
               />
             )),
             ...studies.map((st, idx) => (
@@ -159,12 +185,29 @@ export function CalendarGrid({ year, month, exams, studyWindows, datePicks = [],
                 onHover={showStudy}
                 onMove={move}
                 onLeave={hide}
-                onClick={() => onToggleStudyComplete?.(st.id)}
+                onClick={() => {
+                  if (onOpenEventDetail) {
+                    onOpenEventDetail({
+                      type: 'session',
+                      eventId: st.id,
+                      examName: st.exam.name,
+                      label: st.label || '',
+                      notes: st.notes || '',
+                      completed: st.completed,
+                      startTime: st.startTime,
+                      endTime: st.endTime,
+                      startISO: st.startISO,
+                      endISO: st.endISO,
+                    });
+                  } else {
+                    onToggleStudyComplete?.(st.id);
+                  }
+                }}
               />
             )),
           ];
 
-          const visible = allChildren.slice(0, 3);
+          const visible = allChildren.slice(0, 4);
           const overflow = allChildren.length - visible.length;
 
           return (
@@ -177,14 +220,34 @@ export function CalendarGrid({ year, month, exams, studyWindows, datePicks = [],
                 isToday ? 'today' : '',
                 conflict ? 'conflict' : '',
               ].filter(Boolean).join(' ')}
+              onClick={(event) => {
+                if (event.target.closest('.chip, .study, .more-pip')) return;
+                onOpenDaySummary?.({ date: c.date, events: b.events, studies: b.studies });
+              }}
             >
               <div className="daynum-wrap">
-                <span className="daynum">{c.date.getDate()}</span>
+                <button
+                  className="daynum"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenDaySummary?.({ date: c.date, events: b.events, studies: b.studies });
+                  }}
+                  aria-label={`Apri riepilogo del ${formatLongDate(c.date)}`}
+                >
+                  {c.date.getDate()}
+                </button>
                 {conflict && <span className="warn-pip" title="Più esami in questo giorno">⚠</span>}
               </div>
               <div className="chip-stack">
                 {visible}
-                {overflow > 0 && <span className="more-pip">+{overflow} altri</span>}
+                {overflow > 0 && (
+                  <button
+                    className="more-pip"
+                    onClick={() => onOpenDaySummary?.({ date: c.date, events: b.events, studies: b.studies })}
+                  >
+                    +{overflow} altri
+                  </button>
+                )}
               </div>
             </div>
           );

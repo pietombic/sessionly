@@ -161,70 +161,198 @@ Rispondi SOLO con JSON valido, zero markdown.`;
 
 export async function generateSessionPlan(exams, preferences, includeStudyBlocks, studyPrefs) {
   const today = formatDateISO(new Date());
+  const currentYear = new Date().getFullYear();
+  const todayTime = new Date(today + 'T00:00:00').getTime();
 
-  const examSummaries = exams
-    .filter((e) => e.components.some((c) => c.dates.some((d) => d.date)))
+  // Un nuovo piano considera solo appelli da oggi in avanti. Le date storiche
+  // restano salvate nell'esame, ma non vengono inviate al modello.
+  const validExams = exams
+    .filter((e) => !['done', 'failed', 'saltato'].includes(e.status))
+    .map((e) => ({
+      ...e,
+      components: e.components
+        .map((c) => ({
+          ...c,
+          dates: c.dates.filter((d) =>
+            d.date && new Date(formatDateISO(d.date) + 'T00:00:00').getTime() >= todayTime
+          ),
+        }))
+        .filter((c) => c.dates.length > 0),
+    }))
+    .filter((e) => e.components.length > 0);
+
+  if (validExams.length === 0) {
+    throw new Error('Nessun esame con date disponibili per generare un piano.');
+  }
+
+  const examSummaries = validExams
     .map((e) => {
       const comps = e.components
         .filter((c) => c.dates.some((d) => d.date))
         .map((c) => {
           const dates = c.dates
             .filter((d) => d.date)
-            .map((d) => `${formatDateISO(d.date)}${d.locked ? ' [BLOCCATA]' : ''}`)
-            .join(', ');
+            .map((d) => {
+              const iso = formatDateISO(d.date);
+              const flags = [
+                d.locked ? '[BLOCCATA]' : '',
+                d.time   ? `ore ${d.time}` : '',
+                d.room   ? `aula ${d.room}` : '',
+              ].filter(Boolean).join(' ');
+              return flags ? `${iso} ${flags}` : iso;
+            })
+            .join(' | ');
           return `  - ${c.name}: ${dates}`;
         })
         .join('\n');
-      return `id: "${e.id}", nome: "${e.name}", effort: ${e.effort}/10, difficoltà: ${e.difficulty}/10\n${comps}`;
+
+      return [
+        `id: "${e.id}"`,
+        `nome: "${e.name}"`,
+        `effort: ${e.effort}/10`,
+        `difficoltà: ${e.difficulty}/10`,
+        `approccio: ${e.examApproach ?? 'non specificato'}`,
+        comps,
+      ].join('\n');
     })
     .join('\n\n');
 
-  // Build time slot rules from user preferences
-  const slots = studyPrefs ? [
-    studyPrefs.morning   && { label: 'mattina',     start: '09:00', end: '12:00' },
-    studyPrefs.afternoon && { label: 'pomeriggio',  start: '14:00', end: '18:00' },
-    studyPrefs.evening   && { label: 'sera',        start: '19:00', end: '22:00' },
-  ].filter(Boolean) : [{ label: 'mattina', start: '09:00', end: '11:00' }];
+  // ── Fasce orarie ───────────────────────────────────────────────────────────
+  const DEFAULT_SLOT = { label: 'mattina', start: '09:00', end: '11:00' };
 
-  const sessionH = studyPrefs?.sessionHours ?? 2;
-  const slotDesc = slots.map((s) => `${s.label} (${s.start}–${s.end})`).join(', ');
+  // Supporta sia il vecchio schema (morning/afternoon/evening) sia il nuovo (studySlots)
+  let activeSlots;
+  if (studyPrefs?.studySlots) {
+    activeSlots = studyPrefs.studySlots
+      .filter((s) => s.enabled)
+      .map((s) => ({
+        label: (() => {
+          const h = parseInt(s.start.split(':')[0], 10);
+          if (h < 12) return 'mattina';
+          if (h < 17) return 'pomeriggio';
+          return 'sera';
+        })(),
+        start: s.start,
+        end: s.end,
+      }));
+    if (activeSlots.length === 0) activeSlots = [DEFAULT_SLOT];
+  } else {
+    const slots = studyPrefs
+      ? [
+          studyPrefs.morning   && { label: 'mattina',    start: '09:00', end: '12:00' },
+          studyPrefs.afternoon && { label: 'pomeriggio', start: '14:00', end: '18:00' },
+          studyPrefs.evening   && { label: 'sera',       start: '19:00', end: '22:00' },
+        ].filter(Boolean)
+      : [DEFAULT_SLOT];
+    activeSlots = slots.length > 0 ? slots : [DEFAULT_SLOT];
+  }
 
+  const slotDesc = activeSlots.map((s) => `${s.label} (${s.start}–${s.end})`).join(', ');
+
+  // ── Giorni e intensità ────────────────────────────────────────────────────
+  const DAYS_IT = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
+  const studyDays = studyPrefs?.studyDays ?? [1, 2, 3, 4, 5];
+  const skipDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => !studyDays.includes(d));
+  const studyDaysDesc = skipDays.length > 0
+    ? `Non schedulare studio nei giorni: ${skipDays.map((d) => DAYS_IT[d]).join(', ')}`
+    : 'Tutti i giorni della settimana disponibili';
+
+  // ── Prompt blocchi di studio ───────────────────────────────────────────────
   const studyBlocksRule = includeStudyBlocks
-    ? `Per ogni piano includi finestre di studio ottimali.
-Durata intervallo: effort 7-10 → 10-15 giorni prima dell'esame, effort 4-6 → 5-9 giorni, effort 1-3 → 2-4 giorni.
-La finestra deve finire almeno 1 giorno prima dell'esame. Inizia da oggi (${today}) o successivamente.
-Ogni study_window rappresenta UNA sessione giornaliera ripetuta per tutti i giorni dell'intervallo.
-Fasce orarie disponibili: ${slotDesc}. Durata sessione: ${sessionH}h.
-Scegli start_time e end_time dall'elenco delle fasce disponibili. Se ci sono più fasce, usa quella più adatta al tipo di materia (es. mattina per materie difficili, pomeriggio/sera per ripasso leggero).
-Il campo label deve descrivere COSA studiare (es. "Reti: ripasso protocolli TCP/IP e routing · capitoli 3-5"), NON l'orario (quello va in start_time/end_time).`
-    : 'Non includere blocchi di studio (study_windows deve essere array vuoto []).';
+    ? `
+## STUDY WINDOWS
+Genera una sola finestra temporale per ogni esame. Le singole sessioni e gli
+orari vengono creati localmente usando esattamente le fasce scelte dall'utente.
 
+### Durata intervallo
+| effort | giorni di studio |
+|--------|-----------------|
+| 7-10   | 10-15 giorni    |
+| 4-6    | 5-9 giorni      |
+| 1-3    | 2-4 giorni      |
+
+Vincoli:
+- end deve essere ALMENO 1 giorno prima della data esame
+- start non può essere prima di oggi (${today})
+- Se due finestre si sovrappongono → priorità all'esame con effort più alto
+- Nessuna sessione di studio nei giorni in cui cade un altro esame
+- Non decidere argomenti, capitoli, esercizi o contenuti da studiare
+
+### Fasce orarie disponibili
+${slotDesc}. Ogni fascia è una sessione completa e indivisibile.
+
+### Disponibilità giorni
+${studyDaysDesc}
+
+### Campo label
+Deve essere sempre una stringa vuota. Il contenuto viene personalizzato
+esclusivamente dall'utente.`
+    : `## STUDY WINDOWS\nstudy_windows deve essere [] per ogni piano.`;
+
+  // ── System prompt ──────────────────────────────────────────────────────────
   const systemPrompt = `Sei un assistente accademico esperto in pianificazione della sessione universitaria italiana.
-Data di oggi: ${today}.
+Data di oggi: ${today}. Anno corrente: ${currentYear}.
 
-Proponi ESATTAMENTE 3 alternative di piano della sessione esami. Per ogni piano scegli UNA data specifica per ogni componente di ogni esame.
-Regole scelta date:
-- Date [BLOCCATA] → sempre scelte
-- Rispetta le preferenze dell'utente sull'ordine
-- Distribuisci gli esami nel tempo evitando sovrapposizioni
-- Considera effort e difficoltà per l'ordinamento: esami più semplici prima se c'è poco tempo
-- Per esami con approccio pratico/misto: includi tempo per esercizi e prove simulate nei blocchi di studio
-- Per esami teorici: includi tempo per ripasso e consolidamento
-- Le 3 alternative devono differire realmente nell'ordine e nella scelta delle date
+## OBIETTIVO
+Genera ESATTAMENTE 3 piani alternativi. Ogni piano sceglie UNA data per ogni componente
+di ogni esame. I piani devono rappresentare strategie realmente diverse.
 
-${studyBlocksRule}
+## SCHEMA OUTPUT — rispondi SOLO con JSON valido, zero markdown
+{
+  "plans": [
+    {
+      "id": 1,
+      "label": "Piano Conservativo",         // nome breve della strategia
+      "rationale": "1 frase che spiega la logica",
+      "date_picks": [
+        { "examId": "...", "componentName": "...", "date": "YYYY-MM-DD" }
+      ],
+      "study_windows": [
+        {
+          "examId": "...",
+          "start": "YYYY-MM-DD",
+          "end": "YYYY-MM-DD",
+          "start_time": "HH:MM",
+          "end_time": "HH:MM",
+          "label": ""
+        }
+      ]
+    }
+  ]
+}
 
-Rispondi SOLO con JSON valido, senza markdown.`;
+## REGOLE DATE
+- Date [BLOCCATA] → identiche in tutti e 3 i piani, non modificarle mai
+- Non scegliere mai date precedenti a oggi (${today})
+- Scegli soltanto una delle date elencate per quella specifica componente
+- Nessun esame nello stesso giorno di un altro
+- Almeno 2 giorni di margine tra esami consecutivi quando possibile
+- Se due date bloccate coincidono → segnalalo nel campo rationale
 
-  const userPrompt = `Esami disponibili:\n${examSummaries}\n\nPreferenze utente: "${preferences || 'Nessuna preferenza specifica'}"\n\nRestituisci:\n{"plans": [{"description": "breve razionale del piano", "date_picks": [{"examId": "...", "componentName": "...", "date": "YYYY-MM-DD"}], "study_windows": [{"examId": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "start_time": "HH:MM", "end_time": "HH:MM", "label": "descrizione cosa studiare"}]}]}`;
+## DIFFERENZIAZIONE TRA I 3 PIANI
+- Piano 1 "Conservativo": inizia dagli esami più semplici (effort/difficulty bassa)
+- Piano 2 "Aggressivo":   affronta prima gli esami più pesanti
+- Piano 3 "Bilanciato":   alterna difficile/semplice per mantenere la motivazione
 
+## ORDINAMENTO ESAMI (priorità decrescente)
+1. Preferenze esplicite dell'utente
+2. Vincoli delle date bloccate
+3. Strategia del piano (vedi sopra)
+4. Margine minimo tra esami
+
+${studyBlocksRule}`;
+
+  // ── User prompt ────────────────────────────────────────────────────────────
+  const userPrompt = `Esami:\n${examSummaries}\n\nPreferenze: "${preferences?.trim() || 'Nessuna preferenza specifica'}"`;
+
+  // ── Chiamata Groq ──────────────────────────────────────────────────────────
   const response = await groqFetch({
     model: MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
+      { role: 'user',   content: userPrompt },
     ],
-    temperature: 0.35,
+    temperature: 0.3,
     response_format: { type: 'json_object' },
     max_tokens: 4096,
   });
@@ -234,51 +362,91 @@ Rispondi SOLO con JSON valido, senza markdown.`;
     throw new Error(err?.error?.message || `Errore Groq: ${response.status}`);
   }
 
-  const data = await response.json();
+  const data    = await response.json();
   const content = data.choices[0]?.message?.content;
   if (!content) throw new Error('Risposta Groq vuota');
 
-  const parsed = JSON.parse(content);
-  const plans = parsed.plans || (Array.isArray(parsed) ? parsed : []);
-
-  // Helper: given a slot start + session hours, compute actual end time (capped at slot end)
-  function resolveEndTime(startStr, slotEndStr, sessionH) {
-    const s = parseTimeStr(startStr) ?? 9;
-    const slotEnd = parseTimeStr(slotEndStr) ?? (s + sessionH);
-    const end = Math.min(slotEnd, s + sessionH);
-    const h = Math.floor(end);
-    const m = Math.round((end - h) * 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('Risposta Groq non è JSON valido.');
   }
 
-  return plans.slice(0, 3).map((plan) => {
-    // Cycle through available slots for windows that lack AI-assigned times
-    let slotIdx = 0;
-    return {
-      description: plan.description || '',
-      date_picks: (plan.date_picks || []).map((p) => ({
-        examId: p.examId,
-        componentName: p.componentName,
-        date: p.date,
-      })),
-      study_windows: (plan.study_windows || []).map((w) => {
-        const slot = slots[slotIdx % slots.length];
-        slotIdx++;
-        const startT = w.start_time || slot.start;
-        const endT   = w.end_time   || resolveEndTime(slot.start, slot.end, sessionH);
+  const plans = Array.isArray(parsed.plans) ? parsed.plans : [];
+  if (plans.length === 0) throw new Error('Groq non ha restituito piani validi.');
+
+  const addDays = (iso, amount) => {
+    const d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() + amount);
+    return formatDateISO(d);
+  };
+
+  const allowedByComponent = new Map();
+  validExams.forEach((exam) => {
+    exam.components.forEach((component) => {
+      allowedByComponent.set(
+        `${exam.id}::${component.name}`,
+        component.dates.map((d) => formatDateISO(d.date)).sort()
+      );
+    });
+  });
+
+  return plans.slice(0, 3).map((plan, i) => {
+    const rawPicks = new Map(
+      (plan.date_picks || []).map((p) => [`${p.examId}::${p.componentName}`, p.date])
+    );
+
+    // Ogni componente riceve sempre una data futura realmente disponibile.
+    // Se il modello omette o inventa una data, viene usato il primo appello
+    // valido (o quello bloccato) invece di salvare un valore errato.
+    const date_picks = validExams.flatMap((exam) =>
+      exam.components.map((component) => {
+        const key = `${exam.id}::${component.name}`;
+        const allowed = allowedByComponent.get(key) || [];
+        const proposed = rawPicks.get(key);
+        const locked = component.dates.find((d) => d.locked);
+        const fallback = locked ? formatDateISO(locked.date) : allowed[0];
         return {
-          examId: w.examId,
-          start: w.start,
-          end: w.end,
-          start_time: startT,
-          end_time: endT,
-          label: w.label || 'Studio',
+          examId: exam.id,
+          componentName: component.name,
+          date: allowed.includes(proposed) ? proposed : fallback,
         };
-      }),
+      })
+    );
+
+    // La pianificazione delle sessioni è deterministica e locale. L'AI sceglie
+    // le date degli esami, non i contenuti né gli orari delle sessioni.
+    const study_windows = includeStudyBlocks
+      ? validExams.map((exam) => {
+          const deadline = date_picks
+            .filter((p) => p.examId === exam.id)
+            .map((p) => p.date)
+            .sort()[0];
+          if (!deadline || deadline <= today) return null;
+          const prepDays = exam.effort >= 7 ? 14 : exam.effort >= 4 ? 8 : 4;
+          const end = addDays(deadline, -1);
+          const proposedStart = addDays(end, -(prepDays - 1));
+          return {
+            examId: exam.id,
+            start: proposedStart < today ? today : proposedStart,
+            end,
+            start_time: null,
+            end_time: null,
+            label: '',
+          };
+        }).filter(Boolean)
+      : [];
+
+    return {
+      id:          plan.id ?? i + 1,
+      label:       plan.label       || `Piano ${i + 1}`,
+      rationale:   plan.rationale   || plan.description || '',
+      date_picks,
+      study_windows,
     };
   });
 }
-
 export async function generateStudyPlan(exams) {
   const examSummaries = exams
     .filter((e) => firstExamDate(e))
@@ -475,4 +643,3 @@ Regole tag: informatica/reti → indigo o teal | matematica/fisica → amber o b
 export async function extractExamsFromImage(base64, mimeType) {
   return extractExamsFromImages([{ base64, mimeType }]);
 }
-

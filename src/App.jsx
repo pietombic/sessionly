@@ -1,10 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './lib/supabase.js';
 import {
   fetchExams, upsertExam, removeExam,
-  fetchStudyWindows, replaceStudyWindows, removeStudyWindowsForExam, removeStudyWindow,
+  fetchStudyWindows, replaceStudyWindows, removeStudyWindowsForExam,
   fetchDatePicks, replaceDatePicks, removeDatePicksForExam,
   updateStudyWindowComplete, clearPlan,
+  createStudyEvents, deleteAllPlannedEvents, deleteEvent,
+  fetchEvents, updateEvent, createManualSessions,
+  fetchOnboardingCompleted, completeOnboarding,
 } from './lib/db.js';
 import { TODAY } from './data.js';
 import { hasGroqKey } from './utils/groq.js';
@@ -13,25 +16,35 @@ import { MonthHeader } from './components/MonthHeader.jsx';
 import { CalendarGrid } from './components/CalendarGrid.jsx';
 import { WeekGrid } from './components/WeekGrid.jsx';
 import { ExamForm } from './components/ExamForm.jsx';
-import { TweaksPanel } from './components/TweaksPanel.jsx';
+import { SettingsModal } from './components/SettingsModal.jsx';
 import { CalendarExportModal } from './components/CalendarExportModal.jsx';
 import { AuthModal } from './components/AuthModal.jsx';
 import { LandingScreen } from './components/LandingScreen.jsx';
 import { GroqKeyModal } from './components/GroqKeyModal.jsx';
 import { AIPlanModal } from './components/AIPlanModal.jsx';
 import { StudyTimeline } from './components/StudyTimeline.jsx';
-import { usePomodoroTimer, PomodoroFab, PomodoroView } from './components/PomodoroTimer.jsx';
 import { ImageImportModal } from './components/ImageImportModal.jsx';
 import { HelpModal } from './components/HelpModal.jsx';
+import { EventDetailModal } from './components/EventDetailModal.jsx';
 import { EmailConfirmedScreen } from './components/EmailConfirmedScreen.jsx';
+import { ExamDashboard } from './components/ExamDashboard.jsx';
+import { NewSessionModal } from './components/NewSessionModal.jsx';
+import { TodayDashboard } from './components/TodayDashboard.jsx';
+import { DaySummaryModal } from './components/DaySummaryModal.jsx';
+import { ToastStack } from './components/ToastStack.jsx';
+import { OnboardingModal } from './components/OnboardingModal.jsx';
 
 const TWEAKS_LS_KEY = 'sessionly-tweaks';
 
 const TWEAK_DEFAULTS = {
   palette: 'classic',
   font: 'unbounded',
-  studyStyle: 'tratteggio',
+  studyStyle: 'band',
   sliderStyle: 'ticks',
+  defaultView: 'month',
+  density: 'comfortable',
+  animations: true,
+  showTimeline: true,
   dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
 };
 
@@ -39,7 +52,7 @@ function loadTweaks() {
   try {
     const saved = localStorage.getItem(TWEAKS_LS_KEY);
     if (saved) return { ...TWEAK_DEFAULTS, ...JSON.parse(saved) };
-  } catch {}
+  } catch { }
   return TWEAK_DEFAULTS;
 }
 
@@ -109,6 +122,7 @@ export default function App() {
   const [exams, setExams] = useState([]);
   const [studyWindows, setStudyWindows] = useState([]);
   const [datePicks, setDatePicks] = useState([]);
+  const [events, setEvents] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   // ── UI state ───────────────────────────────────────────────────────────────
@@ -118,23 +132,36 @@ export default function App() {
   const [year, setYear] = useState(TODAY.getFullYear());
   const [month, setMonth] = useState(TODAY.getMonth());
   const [weekStart, setWeekStart] = useState(() => getWeekStart(TODAY));
-  const pom = usePomodoroTimer();
-  const [pomodoroOpen, setPomodoroOpen] = useState(false);
-  const [view, setView] = useState('month');
-  const [mobileTab, setMobileTab] = useState('calendar');
+  const [view, setView] = useState(() => tweaks.defaultView || 'month');
+  const [workspaceView, setWorkspaceView] = useState(() => {
+    try { return localStorage.getItem('sessionly-workspace-view') || 'today'; }
+    catch { return 'today'; }
+  });
+  const [mobileTab, setMobileTab] = useState('today');
   const [selectedId, setSelectedId] = useState(null);
   const [modal, setModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [showGroqKeyModal, setShowGroqKeyModal] = useState(false);
   const [showAIPlanModal, setShowAIPlanModal] = useState(false);
   const [showImageImport, setShowImageImport] = useState(false);
-  const [showHelp, setShowHelp] = useState(() => {
-    try { return !localStorage.getItem('sessionly-help-seen'); } catch { return false; }
-  });
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [helpMode, setHelpMode] = useState(null);
   const [groqKeyAfterSave, setGroqKeyAfterSave] = useState(null);
   const [showAllDates, setShowAllDates] = useState(false);
-  const [aiError, setAiError] = useState(null);
-  const [saveError, setSaveError] = useState(null);
+  const [eventDetail, setEventDetail] = useState(null);
+  const [daySummary, setDaySummary] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const initializedUserRef = useRef(null);
+
+  const dismissToast = useCallback((id) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  const notify = useCallback((type, message) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setToasts((current) => [...current.slice(-3), { id, type, message }]);
+  }, []);
 
   // Apply tweaks to <html> data-attributes and persist to localStorage
   useEffect(() => {
@@ -142,21 +169,31 @@ export default function App() {
     root.dataset.palette = tweaks.palette;
     root.dataset.font = tweaks.font;
     root.dataset.dark = tweaks.dark ? '1' : '0';
-    try { localStorage.setItem(TWEAKS_LS_KEY, JSON.stringify(tweaks)); } catch {}
+    root.dataset.density = tweaks.density;
+    root.dataset.animations = tweaks.animations ? '1' : '0';
+    try { localStorage.setItem(TWEAKS_LS_KEY, JSON.stringify(tweaks)); } catch { }
   }, [tweaks]);
+
+  // Persist main workspace preference
+  useEffect(() => {
+    try { localStorage.setItem('sessionly-workspace-view', workspaceView); }
+    catch { }
+  }, [workspaceView]);
 
   // ── Load data from Supabase ────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [examsData, windowsData, picksData] = await Promise.all([
+      const [examsData, windowsData, picksData, eventsData] = await Promise.all([
         fetchExams(),
         fetchStudyWindows(),
         fetchDatePicks(),
+        fetchEvents(),
       ]);
       setExams(examsData);
       setStudyWindows(windowsData);
       setDatePicks(picksData);
+      setEvents(eventsData);
     } catch (err) {
       console.error('Errore caricamento dati:', err);
     } finally {
@@ -164,11 +201,43 @@ export default function App() {
     }
   }, []);
 
+  const syncOnboarding = useCallback(async (currentUser) => {
+    if (!currentUser?.id) return;
+    const fallbackKey = `sessionly-onboarding-completed:${currentUser.id}`;
+    let localCompleted = false;
+    try { localCompleted = localStorage.getItem(fallbackKey) === '1'; } catch { }
+
+    try {
+      const remoteCompleted = await fetchOnboardingCompleted(currentUser.id);
+      const completed = remoteCompleted || localCompleted;
+      setHelpMode(completed ? null : 'onboarding');
+
+      // Se il database non era disponibile durante una chiusura precedente,
+      // riallinea automaticamente il valore remoto dal fallback locale.
+      if (localCompleted && !remoteCompleted) {
+        completeOnboarding(currentUser.id).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Preferenza onboarding non disponibile:', err);
+      setHelpMode(localCompleted ? null : 'onboarding');
+    }
+  }, []);
+
+  const initializeAuthenticatedUser = useCallback((currentUser) => {
+    if (!currentUser?.id) return;
+    if (initializedUserRef.current === currentUser.id) return;
+    initializedUserRef.current = currentUser.id;
+    loadData();
+    syncOnboarding(currentUser);
+  }, [loadData, syncOnboarding]);
+
   // ── Auth lifecycle ─────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+      const sessionUser = session?.user ?? null;
+      setUser(sessionUser);
       setAuthReady(true);
+      if (sessionUser) initializeAuthenticatedUser(sessionUser);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -177,16 +246,41 @@ export default function App() {
       setAuthReady(true);
       if (newUser) {
         setShowAuthModal(false);
-        loadData();
+        initializeAuthenticatedUser(newUser);
       } else {
+        initializedUserRef.current = null;
         setExams([]);
         setStudyWindows([]);
         setDatePicks([]);
+        setEvents([]);
+        setHelpMode(null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [loadData]);
+  }, [initializeAuthenticatedUser]);
+
+  const completeFirstRun = async () => {
+    setHelpMode(null);
+    if (!user?.id) return;
+
+    const fallbackKey = `sessionly-onboarding-completed:${user.id}`;
+    try { localStorage.setItem(fallbackKey, '1'); } catch { }
+
+    try {
+      await completeOnboarding(user.id);
+    } catch (err) {
+      console.warn('Impossibile salvare onboarding nel database:', err);
+    }
+  };
+
+  const closeHelp = () => {
+    if (helpMode === 'onboarding') {
+      completeFirstRun();
+    } else {
+      setHelpMode(null);
+    }
+  };
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -207,8 +301,9 @@ export default function App() {
 
     try {
       await upsertExam(savedExam, user.id);
+      notify('success', modal?.mode === 'edit' ? 'Esame aggiornato.' : 'Esame aggiunto.');
     } catch (err) {
-      setSaveError(`Errore salvataggio: ${err.message}`);
+      notify('error', `Errore salvataggio: ${err.message}`);
     }
   };
 
@@ -225,8 +320,9 @@ export default function App() {
         removeStudyWindowsForExam(id),
         removeDatePicksForExam(id),
       ]);
+      notify('success', 'Esame eliminato.');
     } catch (err) {
-      setSaveError(`Errore eliminazione: ${err.message}`);
+      notify('error', `Errore eliminazione: ${err.message}`);
     }
   };
 
@@ -240,7 +336,7 @@ export default function App() {
     setShowAIPlanModal(true);
   };
 
-  const handleSelectPlan = async (plan) => {
+  const handleSelectPlan = async (plan, studyPrefs) => {
     setShowAIPlanModal(false);
 
     const picksForState = plan.date_picks.map((p) => ({
@@ -261,7 +357,7 @@ export default function App() {
       end: new Date(w.end + 'T00:00:00'),
       startTime: w.start_time || null,
       endTime: w.end_time || null,
-      label: w.label || 'Studio',
+      label: '',
     }));
 
     setDatePicks(picksForState);
@@ -269,27 +365,45 @@ export default function App() {
     setShowAllDates(false);
 
     try {
+      // Elimina eventi pianificati precedenti, salva picks e windows in parallelo
       await Promise.all([
         replaceDatePicks(picksForDb),
         replaceStudyWindows(windows),
+        deleteAllPlannedEvents(),
       ]);
-      // Reload to get server-assigned IDs for study windows (needed for completion toggle)
-      const [windowsData, picksData] = await Promise.all([fetchStudyWindows(), fetchDatePicks()]);
+
+      // Espandi le windows in eventi giornalieri con la logica slot-based
+      if (plan.study_windows.length > 0) {
+        await createStudyEvents(plan.study_windows, exams, {
+          ...studyPrefs,
+          slotAssignments: plan.slot_assignments || [],
+        });
+      }
+
+      // Ricarica per avere gli ID server-assigned di windows e sessioni
+      const [windowsData, picksData, eventsData] = await Promise.all([
+        fetchStudyWindows(), fetchDatePicks(), fetchEvents(),
+      ]);
       setStudyWindows(windowsData);
       setDatePicks(picksData);
+      setEvents(eventsData);
+      setWorkspaceView('today');
+      notify('success', 'Piano AI creato e aggiunto al calendario.');
     } catch (err) {
-      setSaveError(`Errore salvataggio piano: ${err.message}`);
+      notify('error', `Errore salvataggio piano: ${err.message}`);
     }
   };
 
   const handleRemovePlan = async () => {
     setDatePicks([]);
     setStudyWindows([]);
+    setEvents([]);
     setShowAllDates(false);
     try {
       await clearPlan();
+      notify('success', 'Piano rimosso.');
     } catch (err) {
-      setSaveError(`Errore rimozione piano: ${err.message}`);
+      notify('error', `Errore rimozione piano: ${err.message}`);
     }
   };
 
@@ -304,17 +418,73 @@ export default function App() {
     try {
       await updateStudyWindowComplete(windowId, newCompleted);
     } catch (err) {
-      setSaveError(`Errore aggiornamento: ${err.message}`);
+      notify('error', `Errore aggiornamento: ${err.message}`);
     }
   };
 
-  const handleRemoveStudyWindow = async (windowId) => {
-    if (!windowId) return;
-    setStudyWindows((prev) => prev.filter((w) => w.id !== windowId));
+  const handleOpenEventDetail = (detail) => setEventDetail(detail);
+
+  const handleSaveExamDate = async (examId, componentName, oldDateISO, patch) => {
+    const exam = exams.find((e) => e.id === examId);
+    if (!exam) return;
+    const updatedExam = {
+      ...exam,
+      components: exam.components.map((c) =>
+        c.name === componentName
+          ? {
+              ...c,
+              dates: c.dates.map((d) => {
+                const dISO = d.date
+                  ? `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, '0')}-${String(d.date.getDate()).padStart(2, '0')}`
+                  : '';
+                return dISO === oldDateISO ? { ...d, ...patch } : d;
+              }),
+            }
+          : c
+      ),
+    };
+    // Update state directly (bypasses modal check in saveExam)
+    setExams((prev) => prev.map((e) => e.id === examId ? updatedExam : e));
     try {
-      await removeStudyWindow(windowId);
+      await upsertExam(updatedExam, user.id);
+      notify('success', 'Data dell’esame aggiornata.');
     } catch (err) {
-      setSaveError(`Errore rimozione sessione: ${err.message}`);
+      notify('error', `Errore salvataggio data: ${err.message}`);
+    }
+  };
+
+  // Aggiorna una singola sessione (status / notes / title) — solo quell'evento.
+  const handleUpdateSession = async (eventId, patch) => {
+    const prev = events.find((e) => e.id === eventId);
+    setEvents((es) => es.map((e) => e.id === eventId ? { ...e, ...patch } : e));
+    try {
+      await updateEvent(eventId, patch);
+    } catch (err) {
+      if (prev) setEvents((es) => es.map((e) => e.id === eventId ? prev : e));
+      notify('error', `Errore aggiornamento sessione: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleDeleteSession = async (eventId) => {
+    const removed = events.find((e) => e.id === eventId);
+    setEvents((es) => es.filter((e) => e.id !== eventId));
+    try {
+      await deleteEvent(eventId);
+      notify('success', 'Sessione eliminata.');
+    } catch (err) {
+      if (removed) setEvents((es) => [...es, removed]);
+      notify('error', `Errore eliminazione sessione: ${err.message}`);
+    }
+  };
+
+  const handleCreateSessions = async (params) => {
+    try {
+      const created = await createManualSessions(params);
+      if (created?.length) setEvents((es) => [...es, ...created]);
+      notify('success', `${created?.length || 0} session${created?.length === 1 ? 'e creata' : 'i create'}.`);
+    } catch (err) {
+      notify('error', `Errore creazione sessioni: ${err.message}`);
     }
   };
 
@@ -324,8 +494,9 @@ export default function App() {
     setExams((prev) => [...prev, ...newExams]);
     try {
       await Promise.all(newExams.map((e) => upsertExam(e, user.id)));
+      notify('success', `${newExams.length} esam${newExams.length === 1 ? 'e importato' : 'i importati'}.`);
     } catch (err) {
-      setSaveError(`Errore salvataggio: ${err.message}`);
+      notify('error', `Errore salvataggio: ${err.message}`);
     }
   };
 
@@ -392,7 +563,8 @@ export default function App() {
   const hasPlan = datePicks.length > 0;
 
   return (
-    <div className="app" data-mobile-tab={mobileTab}>
+    <div className={`app${workspaceView !== 'calendar' ? ' dash-mode' : ''}`} data-mobile-tab={mobileTab}>
+      <a className="skip-link" href="#main-content">Vai al contenuto principale</a>
       <Sidebar
         exams={exams}
         studyWindows={studyWindows}
@@ -402,10 +574,12 @@ export default function App() {
         onSelect={openEdit}
         onAdd={() => setModal({ mode: 'new' })}
         onImportImage={() => setShowImageImport(true)}
-        onHelp={() => setShowHelp(true)}
+        onHelp={() => setHelpMode('guide')}
+        user={user}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
-      <main className="main">
+      <main className="main" id="main-content">
         <MonthHeader
           year={year}
           month={month}
@@ -421,69 +595,68 @@ export default function App() {
           showAllDates={showAllDates}
           onToggleAllDates={() => setShowAllDates((v) => !v)}
           onExport={() => setShowExport(true)}
-          user={user}
-          onLogout={handleLogout}
+          workspaceView={workspaceView}
+          onWorkspaceView={setWorkspaceView}
+          onNewExam={() => setModal({ mode: 'new' })}
+          onNewSession={() => setShowNewSession(true)}
         />
 
-        {saveError && (
-          <div className="ai-error" style={{ margin: '12px 32px 0' }}>
-            <span>⚠</span>
-            <span>{saveError}</span>
-            <button
-              style={{ marginLeft: 'auto', appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: 'inherit', fontSize: 16 }}
-              onClick={() => setSaveError(null)}
-            >✕</button>
-          </div>
+        {tweaks.showTimeline && workspaceView === 'calendar' && (
+          <StudyTimeline exams={exams} datePicks={datePicks} today={TODAY} />
         )}
 
-        {aiError && (
-          <div className="ai-error" style={{ margin: '12px 32px 0' }}>
-            <span>⚠</span>
-            <span>{aiError}</span>
-            <button
-              style={{ marginLeft: 'auto', appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: 'inherit', fontSize: 16 }}
-              onClick={() => setAiError(null)}
-            >✕</button>
-          </div>
-        )}
-
-        {pomodoroOpen ? (
-          <PomodoroView pom={pom} onClose={() => setPomodoroOpen(false)} />
+        {exams.length === 0 ? (
+          <EmptyState onAdd={() => setModal({ mode: 'new' })} />
+        ) : workspaceView === 'today' ? (
+          <TodayDashboard
+            exams={exams}
+            events={events}
+            datePicks={datePicks}
+            today={TODAY}
+            onOpenSession={handleOpenEventDetail}
+            onNewSession={() => setShowNewSession(true)}
+            onOpenExam={openEdit}
+            onOpenCalendar={() => setWorkspaceView('calendar')}
+          />
+        ) : workspaceView === 'exams' ? (
+          <ExamDashboard
+            exams={exams}
+            events={events}
+            datePicks={datePicks}
+            today={TODAY}
+            onSelectExam={openEdit}
+          />
+        ) : view === 'week' ? (
+          <WeekGrid
+            weekStart={weekStart}
+            exams={exams}
+            events={events}
+            datePicks={datePicks}
+            showAllDates={showAllDates}
+            today={TODAY}
+            studyStyle={tweaks.studyStyle}
+            onSelectExam={openEdit}
+            onToggleStudyComplete={handleToggleStudyComplete}
+            onRemoveStudyWindow={handleDeleteSession}
+            onOpenEventDetail={handleOpenEventDetail}
+            onMoveSession={handleUpdateSession}
+          />
         ) : (
-          <>
-            <StudyTimeline exams={exams} datePicks={datePicks} today={TODAY} />
-
-            {exams.length === 0 ? (
-              <EmptyState onAdd={() => setModal({ mode: 'new' })} />
-            ) : view === 'week' ? (
-              <WeekGrid
-                weekStart={weekStart}
-                exams={exams}
-                studyWindows={studyWindows}
-                datePicks={datePicks}
-                showAllDates={showAllDates}
-                today={TODAY}
-                studyStyle={tweaks.studyStyle}
-                onSelectExam={openEdit}
-                onToggleStudyComplete={handleToggleStudyComplete}
-                onRemoveStudyWindow={handleRemoveStudyWindow}
-              />
-            ) : (
-              <CalendarGrid
-                year={year}
-                month={month}
-                exams={exams}
-                studyWindows={studyWindows}
-                datePicks={datePicks}
-                showAllDates={showAllDates}
-                today={TODAY}
-                studyStyle={tweaks.studyStyle}
-                onSelectExam={openEdit}
-                onToggleStudyComplete={handleToggleStudyComplete}
-                onRemoveStudyWindow={handleRemoveStudyWindow}
-              />
-            )}
-          </>
+          <CalendarGrid
+            year={year}
+            month={month}
+            exams={exams}
+            events={events}
+            datePicks={datePicks}
+            showAllDates={showAllDates}
+            today={TODAY}
+            studyStyle={tweaks.studyStyle}
+            onSelectExam={openEdit}
+            onToggleStudyComplete={handleToggleStudyComplete}
+            onRemoveStudyWindow={handleDeleteSession}
+            onOpenEventDetail={handleOpenEventDetail}
+            onOpenDaySummary={setDaySummary}
+          />
         )}
       </main>
 
@@ -536,54 +709,119 @@ export default function App() {
         />
       )}
 
-      {showHelp && <HelpModal onClose={() => {
-        try { localStorage.setItem('sessionly-help-seen', '1'); } catch {}
-        setShowHelp(false);
-      }} />}
+      {helpMode === 'onboarding' && (
+        <OnboardingModal
+          onComplete={completeFirstRun}
+          onOpenGuide={() => {
+            completeFirstRun();
+            setHelpMode('guide');
+          }}
+        />
+      )}
 
-      <TweaksPanel tweaks={tweaks} onTweak={setTweak} onGroqKey={() => setShowGroqKeyModal(true)} />
-      {!pomodoroOpen && <PomodoroFab pom={pom} onOpen={() => setPomodoroOpen(true)} />}
+      {helpMode === 'guide' && <HelpModal onClose={closeHelp} />}
+
+      {daySummary && (
+        <DaySummaryModal
+          summary={daySummary}
+          onOpenEvent={(detail) => {
+            setDaySummary(null);
+            handleOpenEventDetail(detail);
+          }}
+          onClose={() => setDaySummary(null)}
+        />
+      )}
+
+      {eventDetail && (
+        <EventDetailModal
+          detail={eventDetail}
+          onSaveExamDate={handleSaveExamDate}
+          onUpdateSession={handleUpdateSession}
+          onDeleteSession={handleDeleteSession}
+          onOpenFullEditor={(examId) => {
+            setEventDetail(null);
+            openEdit(examId);
+          }}
+          onClose={() => setEventDetail(null)}
+        />
+      )}
+
+      {showNewSession && (
+        <NewSessionModal
+          exams={exams}
+          today={TODAY}
+          onCreate={handleCreateSessions}
+          onClose={() => setShowNewSession(false)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          tweaks={tweaks}
+          onTweak={(key, value) => {
+            setTweak(key, value);
+            if (key === 'defaultView') setView(value);
+          }}
+          onGroqKey={() => {
+            setShowSettings(false);
+            setShowGroqKeyModal(true);
+          }}
+          user={user}
+          onLogout={handleLogout}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       <nav className="mobile-tabbar" aria-label="Navigazione">
         <button
-          className={`mobile-tab ${mobileTab === 'calendar' && !pomodoroOpen ? 'active' : ''}`}
-          onClick={() => { setMobileTab('calendar'); setPomodoroOpen(false); }}
+          className={`mobile-tab ${mobileTab === 'today' ? 'active' : ''}`}
+          onClick={() => {
+            setMobileTab('today');
+            setWorkspaceView('today');
+          }}
+          aria-label="Oggi"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="8" />
+            <path d="M12 8v4l3 2" />
+          </svg>
+          <span>Oggi</span>
+        </button>
+        <button
+          className={`mobile-tab ${mobileTab === 'calendar' ? 'active' : ''}`}
+          onClick={() => {
+            setMobileTab('calendar');
+            setWorkspaceView('calendar');
+          }}
           aria-label="Calendario"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2"/>
-            <line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/>
-            <line x1="3" y1="10" x2="21" y2="10"/>
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
           <span>Calendario</span>
         </button>
         <button
-          className={`mobile-tab ${mobileTab === 'list' && !pomodoroOpen ? 'active' : ''}`}
-          onClick={() => { setMobileTab('list'); setPomodoroOpen(false); }}
+          className={`mobile-tab ${mobileTab === 'list' ? 'active' : ''}`}
+          onClick={() => {
+            setMobileTab('list');
+            setWorkspaceView('exams');
+          }}
           aria-label="Esami"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="9" y1="6" x2="20" y2="6"/>
-            <line x1="9" y1="12" x2="20" y2="12"/>
-            <line x1="9" y1="18" x2="20" y2="18"/>
-            <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/>
-            <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/>
-            <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+            <line x1="9" y1="6" x2="20" y2="6" />
+            <line x1="9" y1="12" x2="20" y2="12" />
+            <line x1="9" y1="18" x2="20" y2="18" />
+            <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+            <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+            <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
           </svg>
           <span>Esami</span>
-        </button>
-        <button
-          className={`mobile-tab ${pomodoroOpen ? 'active' : ''}`}
-          onClick={() => { setMobileTab('calendar'); setPomodoroOpen((v) => !v); }}
-          aria-label="Pomodoro"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="13" r="8"/>
-            <polyline points="12 9 12 13 15 13"/>
-            <path d="M9 3h6M12 3v2"/>
-          </svg>
-          <span>Pomodoro</span>
         </button>
       </nav>
     </div>

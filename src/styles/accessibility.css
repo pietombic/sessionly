@@ -1,0 +1,55 @@
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10000;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  transform: translateY(-150%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+:where(button, [role="button"], a, input, textarea, select):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 85%, white);
+  outline-offset: 2px;
+}
+
+html[data-animations="0"] *,
+html[data-animations="0"] *::before,
+html[data-animations="0"] *::after {
+  animation-duration: .01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: .01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .app[data-mobile-tab="today"] .sidebar,
+  .app[data-mobile-tab="calendar"] .sidebar {
+    display: none;
+  }
+
+  .app[data-mobile-tab="list"] .main {
+    display: none;
+  }
+
+  .mobile-tabbar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

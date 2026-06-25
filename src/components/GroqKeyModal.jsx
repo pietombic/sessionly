@@ -21,7 +21,7 @@ export function GroqKeyModal({ onClose, onSaved }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal--compact" onClick={(e) => e.stopPropagation()}>
         <div className="modal-hd">
           <div>
             <h2>Configura Groq AI</h2>

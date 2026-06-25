@@ -1,145 +1,131 @@
 const SECTIONS = [
   {
-    icon: '＋',
-    title: 'Aggiungi esami',
-    tag: '01',
+    icon: '01',
+    title: 'Orientati nell’app',
     body: [
-      'Premi il pulsante + Aggiungi nella barra sinistra per inserire un esame manualmente.',
-      'Per ogni esame puoi specificare nome, tipologia (scritto+orale, parziali, progetto…), tutte le date disponibili per ogni componente, effort e difficoltà.',
-      'Puoi inserire più date alternative per scritto e orale: l\'AI sceglierà quella ottimale quando generi il piano.',
+      'La sidebar contiene gli esami, gli strumenti di importazione e il pulsante Account e impostazioni.',
+      'La parte centrale alterna Calendario ed Esami. Su telefono le due aree si cambiano dalla barra inferiore.',
     ],
     tips: [
-      { icon: '✦', text: 'Premi "Descrivi con AI" per descrivere l\'esame a parole — anche con il microfono — e il form si compila automaticamente.' },
-      { icon: '📷', text: 'Usa il bottone fotocamera accanto ad "Aggiungi" per caricare uno screenshot del calendario universitario: l\'AI rileva tutti gli esami.' },
+      'Questa guida appare automaticamente solo al primo accesso.',
+      'Puoi riaprirla in qualsiasi momento dal pulsante ? nella sidebar.',
     ],
   },
   {
-    icon: '✦',
-    title: 'Piano AI',
-    tag: '02',
+    icon: '02',
+    title: 'Inserisci gli esami',
     body: [
-      'Premi Piano AI per generare un piano della sessione personalizzato. L\'AI sceglie UNA data ottimale tra quelle disponibili per ogni componente di ogni esame.',
-      'L\'AI propone 3 alternative di piano con ordini diversi — sceglie quella che ti convince di più.',
+      'Premi Esame o Aggiungi per creare un esame con nome, tipologia, stato, effort, difficoltà e tutte le date disponibili.',
+      'Ogni componente — scritto, orale, progetto o parziale — può avere più appelli, orari, aule e una data bloccata.',
     ],
     tips: [
-      { icon: '→', text: 'Prima di generare puoi specificare le tue preferenze: "voglio fare prima Reti perché è più semplice".' },
-      { icon: '→', text: 'Scegli gli orari di studio (mattina/pomeriggio/sera) e la durata delle sessioni (1h, 1.5h, 2h, 3h).' },
-      { icon: '→', text: 'Attiva "Includi blocchi di studio" per vedere nel calendario quando prepararti.' },
+      'Descrivi con AI compila il modulo partendo da testo o dettatura.',
+      'La sezione Dettagli programma raccoglie approccio, pagine, PDF e argomenti.',
     ],
   },
   {
-    icon: '◉',
-    title: 'Tutte le date / Rimuovi piano',
-    tag: '03',
+    icon: '03',
+    title: 'Importa dalle immagini',
     body: [
-      'Con un piano AI attivo, il calendario mostra solo le date scelte dall\'AI.',
-      'Il toggle "Tutte le date" (accanto a Esporta) mostra anche le date scartate.',
-      '"Rimuovi piano" cancella le date scelte e i blocchi di studio.',
+      'Il pulsante immagine nella sidebar accetta uno o più screenshot del calendario universitario.',
+      'L’AI confronta le immagini, riconosce gli esami, unisce i duplicati e prepara delle bozze modificabili prima del salvataggio.',
     ],
     tips: [
-      { icon: '⚠', text: 'Se generi un nuovo piano mentre ne esiste già uno, verrà chiesta una conferma prima di sovrascriverlo.' },
+      'Controlla sempre date, anno e tipo di prova prima di confermare l’importazione.',
     ],
   },
   {
-    icon: '📅',
-    title: 'Calendario',
-    tag: '04',
+    icon: '04',
+    title: 'Genera il Piano AI',
     body: [
-      'La vista Mese mostra il calendario mensile con chip colorati per le date degli esami e blocchi di studio.',
-      'La vista Settimana mostra 7 colonne con nomi completi degli esami e orari.',
-      'I chip conflitto (⚠) segnalano più esami nello stesso giorno.',
+      'Piano AI propone tre strategie alternative e sceglie soltanto appelli disponibili da oggi in avanti.',
+      'Puoi indicare priorità personali, giorni di studio e fasce precise per mattina, pomeriggio e sera.',
     ],
     tips: [
-      { icon: '→', text: 'Clicca su un chip esame per aprire e modificare quell\'esame.' },
-      { icon: '→', text: 'Clicca su un blocco di studio per segnarlo come completato (barrato). Ri-clicca per annullare.' },
+      'Ogni fascia attiva diventa una sessione completa: 09:00–12:00 genera un unico blocco 09:00–12:00.',
+      'Il piano decide la materia assegnata, non gli argomenti da studiare: note e task restano personali.',
+      'Se esiste già un piano viene richiesta una conferma prima di sostituirlo.',
     ],
   },
   {
-    icon: '▬',
-    title: 'Linea di progressione',
-    tag: '05',
+    icon: '05',
+    title: 'Usa il calendario',
     body: [
-      'La barra sotto la toolbar appare quando hai un piano AI attivo. Mostra gli esami in ordine cronologico collegati da linee.',
+      'La vista Mese mostra appelli e sessioni in modo sintetico; la vista Settimana posiziona ogni evento sul suo orario reale.',
+      'La settimana copre la giornata fino alle 00:00, è scorrevole e mostra la linea dell’ora corrente.',
     ],
     tips: [
-      { icon: '●', text: 'Verde = esame superato (status "Completato").' },
-      { icon: '●', text: 'Azzurro = l\'esame che stai preparando ora (il primo non ancora superato).' },
-      { icon: '●', text: 'Grigio = esami futuri da preparare.' },
+      'Il simbolo di avviso segnala più esami nello stesso giorno.',
+      'Con un piano attivo puoi passare da Solo piano a Tutte le date.',
+      'Oggi riporta immediatamente il calendario alla data corrente.',
     ],
   },
   {
-    icon: '⏱',
-    title: 'Timer Pomodoro',
-    tag: '06',
+    icon: '06',
+    title: 'Gestisci le sessioni',
     body: [
-      'Il bottone ⏱ in basso a sinistra apre un timer per le sessioni di studio. Supporta la tecnica Pomodoro: sessioni di lavoro alternate a pause.',
+      'Premi Sessione per creare manualmente blocchi ricorrenti scegliendo materia, intervallo di date, orari, durata, pause e giorni.',
+      'Aprendo una sessione puoi modificarne data, ora iniziale, ora finale e note, segnarla come completata oppure eliminarla.',
     ],
     tips: [
-      { icon: '→', text: 'Clicca ⚙ per personalizzare: studio 15/25/30/45/60 min, pausa 5/10/15/20 min.' },
-      { icon: '→', text: 'I pallini mostrano quante sessioni consecutive hai completato.' },
-      { icon: '→', text: 'Quando è in esecuzione il bottone mostra il tempo rimanente anche da chiuso.' },
+      'Le sessioni generate dal piano rispettano le fasce impostate dall’utente.',
+      'Ogni sessione è indipendente: una modifica non altera automaticamente le altre.',
     ],
   },
   {
-    icon: '📋',
-    title: 'Dettagli programma',
-    tag: '07',
+    icon: '07',
+    title: 'Organizza i task',
     body: [
-      'Nella scheda di ogni esame, sotto "Note", trovi la sezione collassabile "Dettagli programma".',
-      'Inserisci il tipo di studio (Teorico / Misto / Pratico), il numero di pagine, il numero di PDF e gli argomenti del programma riga per riga.',
-      'L\'AI userà questi dati per generare blocchi di studio più precisi: con approccio Pratico riserva tempo agli esercizi, con Teorico al ripasso.',
+      'Dentro ogni sessione puoi creare una lista di task personalizzata.',
+      'Ogni task può essere completato, rinominato, eliminato e associato a un orario specifico.',
+    ],
+    tips: [
+      'I task appartengono alla singola sessione e non vengono copiati sugli altri giorni.',
+      'Puoi usare le note della sessione per l’obiettivo generale e i task per le attività concrete.',
+    ],
+  },
+  {
+    icon: '08',
+    title: 'Controlla esami e progresso',
+    body: [
+      'La vista Esami mostra prossima data futura, urgenza, percentuale di sessioni completate e prossimi blocchi di studio.',
+      'La linea di progressione ordina gli esami scelti dal piano e distingue completati, corrente e futuri.',
+    ],
+    tips: [
+      'Gli stati disponibili sono Da iniziare, In corso, Parziale, Completato, Non superato e Saltato.',
+      'La progressione può essere nascosta dalle impostazioni.',
+    ],
+  },
+  {
+    icon: '09',
+    title: 'Modifica appelli ed eventi',
+    body: [
+      'Clicca un appello nel calendario per modificarne data, ora e aula oppure aprire l’editor completo dell’esame.',
+      'Le date bloccate restano protette dalle modifiche accidentali.',
+    ],
+    tips: [
+      'Dopo un esame puoi registrare l’esito e il voto dalla scheda dell’esame.',
+    ],
+  },
+  {
+    icon: '10',
+    title: 'Esporta il calendario',
+    body: [
+      'Esporta crea un file compatibile con Apple Calendar oppure collegamenti per Google Calendar.',
+      'Quando il piano è attivo vengono esportate le date selezionate; usa Tutte le date se vuoi includere ogni appello.',
     ],
     tips: [],
   },
   {
-    icon: '⬆',
-    title: 'Esporta',
-    tag: '08',
+    icon: '11',
+    title: 'Personalizza Sessionly',
     body: [
-      'Premi Esporta per salvare gli esami su Apple Calendar (.ics) o Google Calendar (link diretti).',
-      'Con un piano AI attivo vengono esportate solo le date scelte dall\'AI.',
-      'Per esportare tutte le date, attiva prima il toggle "Tutte le date".',
-    ],
-    tips: [],
-  },
-  {
-    icon: '●',
-    title: 'Stato degli esami',
-    tag: '09',
-    body: [
-      'Ogni esame ha uno stato visibile nella card sidebar: Da iniziare, In corso, Parziale, Completato, Non superato, Saltato.',
-      'Se la data dell\'esame è già passata, nella scheda appare la sezione "Com\'è andata?" con i pulsanti Superato / Non superato / Saltato.',
+      'Apri Account e impostazioni nella parte bassa della sidebar.',
+      'Puoi scegliere tema, palette, font, densità, animazioni, vista iniziale, stile delle sessioni e visibilità della progressione.',
     ],
     tips: [
-      { icon: '→', text: 'Lo stato "Completato" (done) segna l\'esame come verde nella linea di progressione.' },
-    ],
-  },
-  {
-    icon: '⚙',
-    title: 'Impostazioni',
-    tag: '10',
-    body: [
-      'Il pannello ⚙ in basso a destra permette di personalizzare l\'aspetto:',
-    ],
-    tips: [
-      { icon: '→', text: 'Font: Unbounded (default), Lora, Playfair Display, Cormorant Garamond.' },
-      { icon: '→', text: 'Palette colori: Classico, Caldo, Fresco.' },
-      { icon: '→', text: 'Stile blocchi studio: Tratteggio, Banda, Puntinato, Sottolineato.' },
-      { icon: '→', text: 'Tema chiaro/scuro (rilevato automaticamente dal sistema, poi salvato).' },
-      { icon: '→', text: 'Chiave API Groq: ottienila gratis su console.groq.com e inseriscila qui.' },
-    ],
-  },
-  {
-    icon: '🔑',
-    title: 'Chiave API Groq',
-    tag: '11',
-    body: [
-      'Tutte le funzioni AI (descrizione vocale, piano sessione, importazione immagine) usano Groq — un servizio gratuito.',
-      'Vai su console.groq.com → "API Keys" → crea una nuova chiave e incollala nel pannello ⚙.',
-      'La chiave è salvata solo nel browser (localStorage) e non viene mai inviata ai nostri server.',
-    ],
-    tips: [
-      { icon: '→', text: 'Modello testo: llama-3.3-70b-versatile. Modello visione: llama-4-scout-17b.' },
+      'La chiave Groq si configura nella sezione Intelligenza AI.',
+      'La sezione Account mostra l’utente connesso e permette di uscire.',
     ],
   },
 ];
@@ -150,51 +136,46 @@ export function HelpModal({ onClose }) {
       <div className="help-modal">
         <div className="help-hd">
           <div>
-            <h1 className="help-title">Come si usa Sessionly</h1>
+            <span className="help-eyebrow">Benvenuto in Sessionly</span>
+            <h1 className="help-title">Come funziona l’applicazione</h1>
             <p className="help-subtitle">
-              Guida completa a tutte le funzionalità — aggiornata ad ogni nuova versione.
+              Dall’inserimento degli esami alla gestione quotidiana delle sessioni.
+              Questa schermata viene mostrata automaticamente soltanto al primo accesso.
             </p>
           </div>
-          <button className="modal-close" style={{ width: 32, height: 32, fontSize: 18 }} onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
         </div>
 
         <div className="help-body scroll">
           <div className="help-grid">
-            {SECTIONS.map((s) => (
-              <div key={s.tag} className="help-card">
+            {SECTIONS.map((section) => (
+              <article key={section.icon} className="help-card">
                 <div className="help-card-hd">
-                  <span className="help-tag">{s.tag}</span>
-                  <span className="help-icon">{s.icon}</span>
-                  <h3 className="help-card-title">{s.title}</h3>
+                  <span className="help-tag">{section.icon}</span>
+                  <h3 className="help-card-title">{section.title}</h3>
                 </div>
                 <div className="help-card-body">
-                  {s.body.map((p, i) => (
-                    <p key={i} className="help-para">{p}</p>
+                  {section.body.map((paragraph) => (
+                    <p key={paragraph} className="help-para">{paragraph}</p>
                   ))}
-                  {s.tips.length > 0 && (
+                  {section.tips.length > 0 && (
                     <ul className="help-tips">
-                      {s.tips.map((t, i) => (
-                        <li key={i}>
-                          <span className="help-tip-icon">{t.icon}</span>
-                          <span>{t.text}</span>
+                      {section.tips.map((tip) => (
+                        <li key={tip}>
+                          <span className="help-tip-icon">→</span>
+                          <span>{tip}</span>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
-              </div>
+              </article>
             ))}
           </div>
 
           <div className="help-footer">
-            <span>Sessionly · creato da Pietro Tombaccini</span>
-            <a
-              href="https://github.com/pietombic/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              github.com/pietombic
-            </a>
+            <span>Puoi riaprire questa guida dal pulsante ? nella sidebar.</span>
+            <button className="btn" onClick={onClose}>Inizia a usare Sessionly</button>
           </div>
         </div>
       </div>

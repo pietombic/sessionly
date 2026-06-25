@@ -16,14 +16,14 @@
 ### AI Session Planner
 - Generates **3 alternative plans**, each picking one optimal date per exam component
 - Takes into account effort, difficulty, exam approach (teorico / pratico / misto) and any free-text preferences you type
-- Configurable study preferences: time slots (morning 9–12 / afternoon 14–18 / evening 19–22) and session duration (1 h – 3 h)
+- Configurable study preferences: custom morning, afternoon and evening time slots; every active slot becomes one complete study session
 - Optional **study blocks**: AI schedules when to prepare each exam, with precise start/end times stored and rendered in the calendar
 - Double confirmation before overwriting an existing plan
 
 ### Calendar
 - **Month view** — colour-coded chips, conflict warnings, study blocks styled with four patterns (tratteggio, banda, puntinato, sottolineato)
-- **Week view** — full time grid (7–23 h) with events positioned at their actual times; study blocks show start/end times; current-time indicator
-- Click a study block to mark it as done (strikethrough); click again to undo
+- **Week view** — scrollable time grid (5–24 h) with events positioned at their actual times; study blocks show start/end times and the current-time indicator
+- Open a study block to edit its date, start/end time, notes, completion state and personal task list
 - Toggle **Tutte le date** to reveal unselected dates when a plan is active
 - **Rimuovi piano** clears AI picks and study blocks
 
@@ -35,11 +35,11 @@ Horizontal bar below the toolbar showing exams in chronological order — green 
 - Export to **Google Calendar** (direct links)
 - With an active plan, only AI-picked dates are exported; toggle *Tutte le date* first to export everything
 
-### Pomodoro Timer
-Floating button (bottom-left) with configurable work intervals (15 / 25 / 30 / 45 / 60 min) and break intervals (5 / 10 / 15 / 20 min). Session counter visible even when the panel is closed.
-
 ### Appearance
 Font, colour palette (Classico / Caldo / Fresco), study-block style, light/dark mode — all saved to `localStorage`.
+
+### First-access guide
+The complete in-app guide opens automatically only once per account. Its completion is stored in Supabase and the guide remains available from the sidebar help button.
 
 ---
 
@@ -52,7 +52,7 @@ Font, colour palette (Classico / Caldo / Fresco), study-block style, light/dark 
 | AI — text | Groq `llama-3.3-70b-versatile` |
 | AI — vision | Groq `meta-llama/llama-4-scout-17b-16e-instruct` |
 | Analytics | Vercel Analytics |
-| Fonts | Google Fonts (Unbounded, Lora, Playfair Display, Cormorant Garamond, DM Sans, JetBrains Mono) |
+| Fonts | Google Fonts (Unbounded, Lora, Playfair Display, DM Sans, JetBrains Mono) |
 
 ---
 
@@ -89,7 +89,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 VITE_GROQ_API_KEY=your-groq-key   # optional — can be set in-app instead
 ```
 
-> The Groq key can also be entered directly inside the app (⚙ → *Chiave API Groq*). It is stored only in `localStorage` and never sent to any server other than Groq.
+> The Groq key can also be entered from **Account e impostazioni → Intelligenza AI**. It is stored only in `localStorage` and never sent to any server other than Groq.
 
 ### 5. Run
 
@@ -112,7 +112,6 @@ src/
 │   ├── ExamForm.jsx          # Add / edit exam (with AI + voice)
 │   ├── ImageImportModal.jsx  # Multi-image calendar import
 │   ├── StudyTimeline.jsx     # Horizontal progress bar
-│   ├── PomodoroTimer.jsx     # Floating Pomodoro widget
 │   ├── HelpModal.jsx         # In-app guide
 │   └── ...
 ├── lib/

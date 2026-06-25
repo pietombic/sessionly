@@ -98,6 +98,27 @@ create policy "Rate limits: lettura owner"
 
 -- Scrittura consentita solo alla funzione SECURITY DEFINER (non al client diretto)
 
+-- ── Preferenze utente / onboarding ──────────────────────────────────────────
+
+create table if not exists public.user_preferences (
+  user_id                 uuid        primary key references auth.users on delete cascade,
+  onboarding_completed    boolean     not null default false,
+  onboarding_completed_at timestamptz,
+  updated_at              timestamptz not null default now()
+);
+
+alter table public.user_preferences enable row level security;
+
+create policy "Preferenze utente: accesso owner"
+  on public.user_preferences for all
+  using  (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop trigger if exists user_preferences_updated_at on public.user_preferences;
+create trigger user_preferences_updated_at
+  before update on public.user_preferences
+  for each row execute function public.set_updated_at();
+
 -- Funzione atomica: resetta il contatore se il giorno è cambiato,
 -- poi controlla il limite e incrementa solo se consentito.
 create or replace function public.check_and_increment_rate_limit(
@@ -137,3 +158,76 @@ begin
   return query select true, v_calls;
 end;
 $$;
+
+-- ── Tabella eventi (sessioni di studio, pause, ripasso) ──────────────────────
+-- exam_id è text per corrispondere a exams.id (text, non uuid)
+-- duration_min è colonna generata: non includerla nelle INSERT
+
+create table if not exists public.events (
+  id           uuid        primary key default gen_random_uuid(),
+  user_id      uuid        not null references auth.users on delete cascade,
+  exam_id      text        references public.exams(id) on delete cascade, -- null per le pause
+  type         text        not null check (type in ('study', 'break', 'review')),
+  title        text,
+  start_time   timestamptz not null,
+  end_time     timestamptz not null,
+  duration_min integer     generated always as
+               ((extract(epoch from (end_time - start_time)) / 60)::integer) stored,
+  status       text        not null default 'planned'
+               check (status in ('planned', 'completed', 'skipped')),
+  notes        text,
+  created_at   timestamptz not null default now(),
+  constraint events_valid_interval check (end_time > start_time)
+);
+
+create index if not exists events_user_date_idx   on public.events (user_id, start_time);
+create index if not exists events_exam_id_idx     on public.events (exam_id) where exam_id is not null;
+create index if not exists events_user_status_idx on public.events (user_id, status, type);
+
+alter table public.events enable row level security;
+
+create policy "Events: accesso owner"
+  on public.events for all
+  using  (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- ── Event tasks (todo list per eventi e blocchi studio) ──────────────────────
+-- ref_key: "sw:{study_window_uuid}" oppure "exam:{examId}:{componentName}:{YYYY-MM-DD}"
+
+CREATE TABLE IF NOT EXISTS public.event_tasks (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     uuid        NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  ref_key     text        NOT NULL,
+  text        text        NOT NULL,
+  completed   boolean     NOT NULL DEFAULT false,
+  position    integer     NOT NULL DEFAULT 0,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS event_tasks_user_ref_idx ON public.event_tasks(user_id, ref_key);
+ALTER TABLE public.event_tasks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Event tasks: accesso owner"
+  ON public.event_tasks FOR ALL
+  USING  (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Aggiunge colonna notes a study_windows (per descrizione editabile)
+ALTER TABLE public.study_windows ADD COLUMN IF NOT EXISTS notes text;
+
+-- ── Migrazione: task per singola sessione ────────────────────────────────────
+-- Le sessioni di studio sono ora righe indipendenti in `events`. I task si
+-- legano alla singola sessione tramite `event_id` (non più al ref_key
+-- condiviso "sw:{window}"), così non si propagano fra giorni dello stesso esame.
+ALTER TABLE public.event_tasks
+  ADD COLUMN IF NOT EXISTS event_id uuid REFERENCES public.events(id) ON DELETE CASCADE;
+
+-- Orario opzionale del singolo task all'interno della sessione/evento.
+ALTER TABLE public.event_tasks
+  ADD COLUMN IF NOT EXISTS scheduled_time time;
+
+CREATE INDEX IF NOT EXISTS event_tasks_event_idx ON public.event_tasks(event_id);
+
+-- ref_key resta solo per i task legati alle date d'esame ("exam:..."), quindi
+-- non è più obbligatorio (i task di sessione usano event_id).
+ALTER TABLE public.event_tasks ALTER COLUMN ref_key DROP NOT NULL;
