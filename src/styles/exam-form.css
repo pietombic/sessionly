@@ -1,0 +1,1360 @@
+/* Exam editor
+   Kept separate from the legacy stylesheet so the modal has one predictable,
+   responsive layout shared by create and edit flows. */
+
+.exam-form-backdrop {
+  z-index: 6200;
+}
+
+.exam-form-modal {
+  width: min(880px, calc(100vw - 40px));
+  max-width: 880px;
+  max-height: min(92dvh, 980px);
+  border-radius: 22px;
+}
+
+.exam-form-modal .modal-hd {
+  min-height: 94px;
+  padding: 22px 28px 20px;
+  flex: 0 0 auto;
+}
+
+.exam-form-modal .modal-hd h2 {
+  margin: 2px 0 0;
+  font-family: var(--sans);
+  font-size: clamp(20px, 2.4vw, 27px);
+  font-weight: 720;
+  line-height: 1.15;
+}
+
+.exam-form-eyebrow {
+  display: block;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.exam-form-modal .modal-body {
+  padding: 22px 28px 32px;
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* The body is a vertical flex container. These elements must keep their
+   intrinsic height; otherwise the browser shrinks every section to fit the
+   viewport and clips its fields instead of enabling body scrolling. */
+.exam-form-modal .modal-body > *,
+.exam-form-section,
+.exam-ai-trigger,
+.exam-ai-panel,
+.exam-form-modal .program-details-section,
+.exam-form-modal .outcome-section,
+.exam-form-modal .modal-delete-mobile {
+  flex: 0 0 auto;
+}
+
+.exam-form-modal .modal-ft {
+  min-height: 76px;
+  padding: 14px 28px;
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--paper) 82%, var(--paper-2) 18%);
+  box-shadow: 0 -12px 34px rgba(0, 0, 0, .05);
+}
+
+.exam-form-section {
+  min-height: max-content;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--paper) 96%, var(--paper-2) 4%);
+  overflow: hidden;
+}
+
+.exam-form-section-head {
+  padding: 20px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  border-right: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--paper-2) 62%, var(--paper) 38%);
+}
+
+.exam-form-section-head > span {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.exam-form-section-head h3 {
+  margin: 2px 0 5px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.exam-form-section-head p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.exam-form-section-body {
+  min-width: 0;
+  min-height: max-content;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.exam-form-modal .field {
+  min-width: 0;
+  gap: 7px;
+}
+
+.exam-form-modal .field-label {
+  color: var(--ink-soft);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .11em;
+}
+
+.exam-form-modal .field-hint {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.exam-form-modal .input {
+  width: 100%;
+  min-width: 0;
+  min-height: 43px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .025) inset;
+}
+
+.exam-form-modal .input:hover {
+  border-color: color-mix(in srgb, var(--ink-soft) 48%, var(--rule));
+}
+
+.exam-form-modal .input:focus {
+  border-color: var(--accent);
+  background: var(--paper);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+  transform: none;
+}
+
+.exam-form-modal textarea.input {
+  min-height: 86px;
+  line-height: 1.55;
+}
+
+.exam-field-error,
+.exam-inline-error {
+  color: var(--warn);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.exam-inline-error {
+  flex: 1;
+}
+
+.exam-form-modal .name-code-grid,
+.exam-two-column {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(150px, 1fr);
+  gap: 14px;
+}
+
+.exam-two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.exam-form-modal .swatch-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.exam-form-modal .swatch {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--paper);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--rule-strong);
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+
+.exam-form-modal .swatch:hover {
+  transform: scale(1.08);
+}
+
+.exam-form-modal .swatch.on {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink);
+}
+
+.exam-ai-trigger {
+  width: 100%;
+  min-height: 66px;
+  padding: 12px 15px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--rule));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.exam-ai-trigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
+}
+
+.exam-ai-trigger-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.exam-ai-trigger > span:nth-child(2) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.exam-ai-trigger strong {
+  font-size: 12px;
+}
+
+.exam-ai-trigger small {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exam-ai-panel {
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--rule));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+}
+
+.exam-ai-panel-head,
+.exam-ai-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.exam-ai-panel-head {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.exam-ai-panel-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.exam-ai-panel-head strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.exam-ai-close {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+}
+
+.exam-ai-textarea {
+  min-height: 96px !important;
+}
+
+.exam-ai-actions {
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.exam-ai-submit {
+  margin-left: auto;
+}
+
+.exam-form-modal .type-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.exam-form-modal .type-card {
+  min-width: 0;
+  min-height: 62px;
+  padding: 10px 11px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 22px;
+  gap: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 11px;
+  background: var(--paper);
+  box-shadow: none;
+}
+
+.exam-form-modal .type-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 3%, var(--paper));
+}
+
+.exam-form-modal .type-card.on {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  transform: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.exam-form-modal .type-card .ttype-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper-2));
+  color: var(--accent);
+}
+
+.type-card-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.type-card-copy strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-card-copy small {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-card-check {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+  color: var(--paper);
+  font-size: 10px;
+}
+
+.type-card.on .type-card-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.exam-workload-body .slider-row {
+  gap: 24px;
+}
+
+.exam-preparation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.preparation-field {
+  grid-column: 1 / -1;
+}
+
+.input-with-suffix {
+  position: relative;
+  min-width: 0;
+}
+
+.input-with-suffix > .input {
+  padding-right: 42px;
+}
+
+.input-with-suffix > span {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.preparation-control {
+  position: relative;
+  min-height: 43px;
+  padding: 0 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.preparation-control:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.preparation-segments {
+  height: 25px;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.preparation-segments span {
+  height: 7px;
+  flex: 1;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink-soft) 16%, transparent);
+  transition:
+    height .16s ease,
+    background .16s ease,
+    box-shadow .16s ease;
+}
+
+.preparation-segments span:nth-child(2),
+.preparation-segments span:nth-child(3) {
+  height: 9px;
+}
+
+.preparation-segments span:nth-child(4),
+.preparation-segments span:nth-child(5) {
+  height: 12px;
+}
+
+.preparation-segments span:nth-child(6),
+.preparation-segments span:nth-child(7) {
+  height: 15px;
+}
+
+.preparation-segments span:nth-child(8),
+.preparation-segments span:nth-child(9) {
+  height: 19px;
+}
+
+.preparation-segments span:nth-child(10) {
+  height: 23px;
+}
+
+.preparation-segments span.is-active {
+  background: color-mix(in srgb, var(--accent) 82%, var(--ink) 18%);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.preparation-control input[type="range"] {
+  position: absolute;
+  inset: 0 60px 0 0;
+  z-index: 2;
+  width: auto;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.preparation-control strong {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: right;
+}
+
+html[data-dark="1"] .preparation-control {
+  border-color: #303234;
+  background: #141516;
+}
+
+html[data-dark="1"] .preparation-segments span {
+  background: #292b2d;
+}
+
+html[data-dark="1"] .preparation-segments span.is-active {
+  background: color-mix(in srgb, var(--accent) 72%, #d8d1bd 28%);
+}
+
+.exam-subsection-label {
+  padding-top: 4px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.exam-subsection-label > span {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.exam-subsection-label > small {
+  color: var(--ink-soft);
+  font-size: 9px;
+  text-align: right;
+}
+
+.exam-form-modal .slider-block {
+  padding: 14px;
+  gap: 11px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper-2) 48%, var(--paper) 52%);
+}
+
+.exam-form-modal .slider-block .slider-head .name {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.exam-form-modal .slider-block .slider-head .val {
+  font-size: 16px;
+}
+
+.exam-load-badge {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.exam-form-modal .pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.exam-form-modal .pill {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.exam-form-modal .pill:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--rule));
+  color: var(--ink);
+}
+
+.exam-form-modal .pill.on {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  color: var(--ink);
+}
+
+.exam-partial-panel {
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--paper-2);
+}
+
+.exam-partial-row,
+.exam-partial-grade {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.exam-partial-grade {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.exam-grade-input {
+  width: 72px !important;
+  min-height: 36px !important;
+}
+
+.exam-dates-body {
+  gap: 20px;
+}
+
+.exam-dependency-field {
+  max-width: 100%;
+}
+
+.exam-lock-explanation {
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--rule));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  color: var(--ink-soft);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.exam-lock-explanation strong {
+  color: var(--ink);
+}
+
+.exam-form-modal .date-component {
+  gap: 9px;
+}
+
+.exam-form-modal .date-component + .date-component {
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+
+.exam-form-modal .date-component .comp-hd h4 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.exam-add-date {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.exam-add-date:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--rule));
+  color: var(--ink);
+}
+
+.exam-form-modal .date-row {
+  grid-template-columns:
+    minmax(118px, 1fr)
+    minmax(82px, .68fr)
+    minmax(105px, .9fr)
+    minmax(106px, .85fr)
+    auto
+    32px;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper-2) 45%, var(--paper) 55%);
+}
+
+.exam-form-modal .date-row.locked {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+}
+
+.exam-form-modal .date-row.locked::before {
+  display: none;
+}
+
+.exam-form-modal .date-row .input {
+  min-height: 38px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.date-preference-select {
+  font-family: var(--sans) !important;
+}
+
+.exam-form-modal .toggle-lock {
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.exam-form-modal .toggle-lock.on {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 11%, var(--paper));
+  color: var(--ink);
+}
+
+.exam-form-modal .icon-x {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 17px;
+}
+
+.exam-form-modal .icon-x:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--warn) 28%, var(--rule));
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  color: var(--warn);
+}
+
+.exam-form-modal .program-details-section,
+.exam-form-modal .outcome-section {
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--paper) 96%, var(--paper-2) 4%);
+  overflow: hidden;
+}
+
+.exam-planning-preferences {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.exam-form-modal .program-details-toggle {
+  min-height: 52px;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.exam-form-modal .program-details-toggle:hover {
+  background: var(--paper-2);
+}
+
+.exam-form-modal .program-details-body {
+  padding: 18px;
+  gap: 18px;
+  background: color-mix(in srgb, var(--paper-2) 35%, var(--paper) 65%);
+}
+
+.exam-topics-input {
+  min-height: 108px !important;
+}
+
+.exam-material-input {
+  min-height: 84px !important;
+}
+
+.topic-list-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.topic-list-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.topic-empty-state {
+  min-height: 64px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.topic-empty-state:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.topic-editor-list {
+  display: grid;
+  gap: 7px;
+}
+
+.topic-editor-row {
+  padding: 8px;
+  display: grid;
+  grid-template-columns:
+    minmax(130px, 1.25fr)
+    minmax(92px, .72fr)
+    minmax(92px, .72fr)
+    minmax(82px, .64fr)
+    72px
+    32px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--rule);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--paper-2) 42%, var(--paper) 58%);
+}
+
+.topic-editor-row .input {
+  min-height: 38px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.topic-hours .input {
+  padding-right: 25px;
+}
+
+.material-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.material-check {
+  min-height: 40px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.material-check.on {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  color: var(--ink);
+}
+
+.material-check > span {
+  color: var(--accent);
+  font-family: var(--mono);
+}
+
+.exam-history-panel {
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper-2) 52%, var(--paper) 48%);
+}
+
+.exam-history-grid {
+  display: grid;
+  grid-template-columns: minmax(130px, .6fr) minmax(0, 1.4fr);
+  gap: 12px;
+}
+
+.exam-feasibility {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--paper-2) 42%, var(--paper) 58%);
+}
+
+.exam-feasibility-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ink-soft) 11%, transparent);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-weight: 800;
+}
+
+.exam-feasibility-copy {
+  min-width: 0;
+}
+
+.exam-feasibility-copy .field-label {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.exam-feasibility-copy strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.exam-feasibility-copy p {
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.exam-feasibility-stats {
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.exam-feasibility-stats > span {
+  min-width: 58px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+}
+
+.exam-feasibility-stats strong {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.exam-feasibility-stats small {
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 8px;
+}
+
+.exam-feasibility-warning {
+  grid-column: 2 / -1;
+  color: var(--warn);
+  font-size: 9px;
+}
+
+.exam-feasibility--good {
+  border-color: color-mix(in srgb, #62a97b 38%, var(--rule));
+}
+
+.exam-feasibility--good .exam-feasibility-icon {
+  background: color-mix(in srgb, #62a97b 14%, transparent);
+  color: #74b98b;
+}
+
+.exam-feasibility--warning {
+  border-color: color-mix(in srgb, #c39b57 42%, var(--rule));
+}
+
+.exam-feasibility--warning .exam-feasibility-icon {
+  background: color-mix(in srgb, #c39b57 14%, transparent);
+  color: #d0ab69;
+}
+
+.exam-feasibility--danger {
+  border-color: color-mix(in srgb, var(--warn) 44%, var(--rule));
+}
+
+.exam-feasibility--danger .exam-feasibility-icon {
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+  color: var(--warn);
+}
+
+.exam-form-modal .outcome-section {
+  padding: 18px;
+}
+
+.outcome-title {
+  margin-bottom: 10px;
+}
+
+.exam-form-primary-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.exam-form-modal .modal-ft .btn {
+  min-height: 40px;
+  padding: 9px 14px;
+  border-radius: 10px;
+}
+
+.exam-form-modal .modal-ft .exam-form-primary-actions .btn:last-child {
+  min-width: 150px;
+}
+
+html[data-dark="1"] .exam-form-modal {
+  background: #101112;
+}
+
+html[data-dark="1"] .exam-form-section,
+html[data-dark="1"] .exam-form-modal .program-details-section,
+html[data-dark="1"] .exam-form-modal .outcome-section {
+  background: #121314;
+}
+
+html[data-dark="1"] .exam-form-section-head {
+  background: #171819;
+}
+
+html[data-dark="1"] .exam-form-modal .input,
+html[data-dark="1"] .exam-form-modal .type-card,
+html[data-dark="1"] .exam-form-modal .pill,
+html[data-dark="1"] .exam-form-modal .date-row .input {
+  background: #0f1011;
+}
+
+@media (max-width: 760px) {
+  .exam-form-backdrop {
+    display: block;
+    padding: 0;
+    background: var(--paper);
+  }
+
+  .exam-form-modal,
+  .modal.exam-form-modal {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .exam-form-modal .modal-hd {
+    min-height: 76px;
+    padding: max(14px, env(safe-area-inset-top)) 16px 13px;
+    align-items: flex-start;
+  }
+
+  .exam-form-modal .modal-hd h2 {
+    max-width: calc(100vw - 70px);
+    overflow: hidden;
+    font-size: 19px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .exam-form-modal .modal-hd .sub {
+    max-width: calc(100vw - 70px);
+    font-size: 10px;
+  }
+
+  .exam-form-modal .modal-body {
+    padding: 14px 12px 28px;
+    gap: 10px;
+  }
+
+  .exam-form-modal .modal-ft {
+    min-height: auto;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .exam-form-section {
+    grid-template-columns: 1fr;
+    border-radius: 14px;
+  }
+
+  .exam-form-section-head {
+    padding: 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .exam-form-section-head h3 {
+    font-size: 12px;
+  }
+
+  .exam-form-section-head p {
+    font-size: 9px;
+  }
+
+  .exam-form-section-body {
+    padding: 14px;
+    gap: 15px;
+  }
+
+  .exam-form-modal .name-code-grid,
+  .exam-two-column,
+  .exam-preparation-grid,
+  .exam-planning-preferences,
+  .exam-history-grid,
+  .exam-form-modal .slider-row {
+    grid-template-columns: 1fr;
+  }
+
+  .preparation-field {
+    grid-column: auto;
+  }
+
+  .exam-subsection-label {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .exam-subsection-label > small {
+    text-align: left;
+  }
+
+  .exam-form-modal .input {
+    min-height: 46px;
+    font-size: 16px;
+  }
+
+  .exam-form-modal textarea.input {
+    font-size: 16px;
+  }
+
+  .exam-form-modal .type-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .exam-form-modal .type-card {
+    min-height: 58px;
+  }
+
+  .exam-form-modal .swatch {
+    width: 27px;
+    height: 27px;
+  }
+
+  .exam-ai-trigger {
+    min-height: 62px;
+  }
+
+  .exam-ai-trigger small {
+    white-space: normal;
+  }
+
+  .exam-ai-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .exam-ai-actions .mic-btn,
+  .exam-ai-submit {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+
+  .exam-form-modal .date-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, .75fr);
+    grid-template-rows: auto auto auto;
+    gap: 7px;
+    padding: 10px;
+  }
+
+  .exam-form-modal .date-row input[type="date"] {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .exam-form-modal .date-row input[type="time"] {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .exam-form-modal .date-row input:not([type="date"]):not([type="time"]) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .exam-form-modal .date-row .date-preference-select {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .exam-form-modal .date-row .toggle-lock {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: stretch;
+    justify-content: center;
+  }
+
+  .exam-form-modal .date-row .icon-x {
+    grid-column: 2;
+    grid-row: 4;
+    justify-self: end;
+  }
+
+  .exam-form-modal .date-row .input {
+    min-width: 0;
+    min-height: 42px;
+    font-size: 14px;
+  }
+
+  .exam-partial-row,
+  .exam-partial-grade {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .exam-grade-input {
+    width: 100% !important;
+  }
+
+  .exam-form-modal .pills {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topic-list-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topic-list-head .exam-add-date {
+    align-self: flex-start;
+  }
+
+  .topic-editor-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .topic-editor-row .topic-name-input {
+    grid-column: 1 / -1;
+  }
+
+  .topic-editor-row .topic-status {
+    grid-column: 1;
+  }
+
+  .topic-editor-row .topic-importance {
+    grid-column: 2;
+  }
+
+  .topic-editor-row .topic-difficulty {
+    grid-column: 1;
+  }
+
+  .topic-editor-row .topic-hours {
+    grid-column: 2;
+  }
+
+  .topic-editor-row .icon-x {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  .material-check-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .exam-feasibility {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .exam-feasibility-stats {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .exam-feasibility-warning {
+    grid-column: 1 / -1;
+  }
+
+  .exam-form-modal .pill {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .exam-form-modal .outcome-btns {
+    grid-template-columns: 1fr;
+  }
+
+  .exam-form-modal .modal-delete-mobile {
+    margin-top: 4px;
+  }
+
+  .exam-form-primary-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  }
+
+  .exam-form-modal .modal-ft .btn,
+  .exam-form-modal .modal-ft .exam-form-primary-actions .btn:last-child {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+  }
+}
+
+@media (max-width: 380px) {
+  .exam-form-modal .date-row {
+    grid-template-columns: 1fr;
+  }
+
+  .exam-form-modal .date-row input[type="date"],
+  .exam-form-modal .date-row input[type="time"],
+  .exam-form-modal .date-row input:not([type="date"]):not([type="time"]),
+  .exam-form-modal .date-row .date-preference-select,
+  .exam-form-modal .date-row .toggle-lock,
+  .exam-form-modal .date-row .icon-x {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .exam-form-modal .date-row .icon-x {
+    justify-self: stretch;
+    width: 100%;
+  }
+}

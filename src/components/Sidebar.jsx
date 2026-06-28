@@ -89,7 +89,7 @@ function ExamCard({ exam, today, selected, planned, datePicks, onClick }) {
   );
 }
 
-export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selectedId, onSelect, onAdd, onImportImage, onHelp, user, onOpenSettings }) {
+export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selectedId, onSelect, onAdd, onImportImage, onHelp, user, onOpenSettings, onCollapse }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('active');
   const plannedIds = new Set(studyWindows.map((w) => w.examId));
@@ -120,7 +120,20 @@ export function Sidebar({ exams, studyWindows = [], datePicks = [], today, selec
     <aside className="sidebar">
       <div className="sidebar-hd">
         <div className="brand">Sessionly</div>
-        <div className="session-tag">Sessione estiva</div>
+        <div className="sidebar-hd-actions">
+          <div className="session-tag">Sessione estiva</div>
+          <button
+            className="sidebar-collapse-button"
+            onClick={onCollapse}
+            title="Nascondi barra laterale"
+            aria-label="Nascondi barra laterale"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16M14 9l-3 3 3 3" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div className="sidebar-toolbar">

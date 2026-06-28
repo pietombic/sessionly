@@ -107,6 +107,22 @@ html[data-dark="1"] {
   --paper-texture-opacity: 0.025;
 }
 
+html[data-dark="1"][data-palette="warm"] {
+  --accent: #c88a65;
+  --accent-deep: #e3a17a;
+  --tag-amber: #c79c5e;
+  --tag-brick: #cd715d;
+  --tag-ochre: #c98758;
+}
+
+html[data-dark="1"][data-palette="cool"] {
+  --accent: #72a58f;
+  --accent-deep: #8fc1aa;
+  --tag-sage: #7fa082;
+  --tag-teal: #68a0a0;
+  --tag-indigo: #858aa8;
+}
+
 /* ───────────────────────────────────────── reset + base */
 
 * {
@@ -3746,12 +3762,16 @@ textarea.input {
     min-height: 0;
   }
 
-  .app[data-mobile-tab="calendar"] .sidebar {
+  .app[data-mobile-tab="today"] .sidebar,
+  .app[data-mobile-tab="calendar"] .sidebar,
+  .app[data-mobile-tab="exams"] .sidebar {
     display: none;
   }
 
-  .app[data-mobile-tab="list"] .main {
-    display: none;
+  .app[data-mobile-tab="today"] .main,
+  .app[data-mobile-tab="calendar"] .main,
+  .app[data-mobile-tab="exams"] .main {
+    display: flex;
   }
 
   /* ── Bottom tab bar ───────────────────────────────────────────────────── */
@@ -4418,13 +4438,6 @@ html[data-dark="1"] .days-badge-ok     { background: rgba(30,126,52,0.2);  color
 .seg-btn svg { opacity: 0.85; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Dashboard mode: nascondi la sidebar su desktop (no duplicazione esami)
-   ═══════════════════════════════════════════════════════════════════════════ */
-@media (min-width: 769px) {
-  .app.dash-mode .sidebar { display: none; }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    EventDetailModal: toggle completamento sessione + todo list ridisegnata
    ═══════════════════════════════════════════════════════════════════════════ */
 .session-complete-toggle {
@@ -4793,16 +4806,6 @@ html[data-dark="1"] .days-badge-ok     { background: rgba(30,126,52,0.2);  color
 .exam-card-session-row {
   display: grid;
   grid-template-columns: minmax(92px, auto) auto;
-}
-
-@media (min-width: 769px) {
-  .app.dash-mode {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .app.dash-mode .main {
-    grid-column: 1;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

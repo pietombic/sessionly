@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { extractExamsFromImages } from '../utils/groq.js';
 import { TAG_CSS } from '../data.js';
+import { useDialog } from '../hooks/useDialog.js';
 
 const MONTHS_SHORT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
@@ -18,6 +19,15 @@ function ExamDraftCard({ draft, selected, onToggle }) {
     <div
       className={`import-draft-card ${selected ? 'selected' : ''}`}
       onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
+      role="checkbox"
+      aria-checked={selected}
+      tabIndex={0}
       style={{ '--tag': TAG_CSS[draft.tag] }}
     >
       <div className="import-draft-sel">
@@ -42,6 +52,7 @@ function ExamDraftCard({ draft, selected, onToggle }) {
 }
 
 export function ImageImportModal({ onImport, onNoGroqKey, onClose }) {
+  const dialogRef = useDialog(onClose);
   const [dragging, setDragging] = useState(false);
   // images: { id, url, base64, mimeType } — loaded but not yet analysed
   const [images, setImages] = useState([]);
@@ -152,15 +163,15 @@ export function ImageImportModal({ onImport, onNoGroqKey, onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-import">
+      <div ref={dialogRef} className="modal modal-import" role="dialog" aria-modal="true" aria-labelledby="image-import-title">
         <div className="modal-hd">
           <div>
-            <h2>Importa dal calendario</h2>
+            <h2 id="image-import-title">Importa dal calendario</h2>
             <div className="sub">
               Carica uno o più screenshot — l'AI li analizza tutti insieme per ricostruire date e nomi completi.
             </div>
           </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
         </div>
 
         <div className={`modal-body import-body${hasDrafts ? ' import-body-split' : ''}`} style={{ gap: 0, padding: 0 }}>

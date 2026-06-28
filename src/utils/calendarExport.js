@@ -70,7 +70,7 @@ function buildVEvent(exam, comp, dt, dtstamp) {
       `Difficoltà: ${exam.difficulty}/10`,
       `Effort: ${exam.effort}/10`,
       exam.notes ? exam.notes : null,
-    ].filter(Boolean).join('\\n')
+    ].filter(Boolean).join('\n')
   );
 
   const props = [
@@ -88,7 +88,23 @@ function buildVEvent(exam, comp, dt, dtstamp) {
   return props;
 }
 
-function buildICS(events) {
+function buildStudyVEvent(event, dtstamp) {
+  const start = new Date(event.start_time);
+  const end = new Date(event.end_time);
+  const summary = escapeICS(event.title || 'Sessione di studio');
+  return [
+    'BEGIN:VEVENT',
+    `UID:study-${event.id}@sessionly`,
+    `DTSTAMP:${dtstamp}`,
+    `SUMMARY:${summary}`,
+    `DTSTART:${icsDateTime(start, `${pad(start.getHours())}:${pad(start.getMinutes())}`)}`,
+    `DTEND:${icsDateTime(end, `${pad(end.getHours())}:${pad(end.getMinutes())}`)}`,
+    event.notes ? `DESCRIPTION:${escapeICS(event.notes)}` : null,
+    'END:VEVENT',
+  ].filter(Boolean);
+}
+
+function buildICS(events, studyEvents = []) {
   const dtstamp = icsNow();
   const lines = [
     'BEGIN:VCALENDAR',
@@ -101,6 +117,9 @@ function buildICS(events) {
 
   for (const { exam, comp, dt } of events) {
     lines.push(...buildVEvent(exam, comp, dt, dtstamp));
+  }
+  for (const event of studyEvents) {
+    lines.push(...buildStudyVEvent(event, dtstamp));
   }
 
   lines.push('END:VCALENDAR');
@@ -162,6 +181,21 @@ export function googleCalendarURL(exam, comp, dt) {
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
+export function googleStudyCalendarURL(event) {
+  const start = new Date(event.start_time);
+  const end = new Date(event.end_time);
+  const formatDateTime = (date) =>
+    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
+    + `T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: event.title || 'Sessione di studio',
+    dates: `${formatDateTime(start)}/${formatDateTime(end)}`,
+    ...(event.notes ? { details: event.notes } : {}),
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 export function getAllEvents(exams) {
   const events = [];
   for (const exam of exams) {
@@ -181,8 +215,8 @@ function sameDay(a, b) {
     && a.getDate() === b.getDate();
 }
 
-export function getFilteredEvents(exams, datePicks) {
-  if (!datePicks || datePicks.length === 0) return getAllEvents(exams);
+export function getFilteredEvents(exams, datePicks, showAllDates = false) {
+  if (showAllDates || !datePicks || datePicks.length === 0) return getAllEvents(exams);
   return getAllEvents(exams).filter(({ exam, comp, dt }) =>
     datePicks.some(
       (p) => p.examId === exam.id && p.componentName === comp.name && sameDay(p.date, dt.date)
@@ -190,12 +224,18 @@ export function getFilteredEvents(exams, datePicks) {
   );
 }
 
-export function generateFilteredICS(exams, datePicks) {
-  return buildICS(getFilteredEvents(exams, datePicks));
+export function generateFilteredICS(exams, datePicks, showAllDates = false, studyEvents = []) {
+  return buildICS(
+    getFilteredEvents(exams, datePicks, showAllDates),
+    studyEvents.filter((event) => event.type === 'study')
+  );
 }
 
-export function downloadFilteredICS(exams, datePicks) {
-  triggerDownload(generateFilteredICS(exams, datePicks), 'sessionly.ics');
+export function downloadFilteredICS(exams, datePicks, showAllDates = false, studyEvents = []) {
+  triggerDownload(
+    generateFilteredICS(exams, datePicks, showAllDates, studyEvents),
+    'sessionly.ics'
+  );
 }
 
 export function formatShortDate(date) {

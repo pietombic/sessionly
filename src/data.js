@@ -1,5 +1,3 @@
-export const TODAY = new Date();
-
 const d = (y, m, day, h, min) => {
   const dt = new Date(y, m - 1, day);
   if (h != null) dt.setHours(h, min || 0, 0, 0);

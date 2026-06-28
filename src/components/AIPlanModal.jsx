@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { generateSessionPlan } from '../utils/groq.js';
+import { useDialog } from '../hooks/useDialog.js';
 
 const MONTHS_SHORT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
@@ -56,6 +57,11 @@ function PlanCard({ plan, idx, exams, studySlots, onChange, onSelect }) {
         {plan.study_windows?.length > 0 && (
           <div className="plan-study-note">
             {plan.study_windows.length} materie pianificate nelle fasce selezionate
+          </div>
+        )}
+        {plan.warnings?.length > 0 && (
+          <div className="plan-warning-list" role="status">
+            {plan.warnings.map((warning) => <span key={warning}>△ {warning}</span>)}
           </div>
         )}
       </div>
@@ -131,6 +137,7 @@ function PlanCard({ plan, idx, exams, studySlots, onChange, onSelect }) {
 }
 
 export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose }) {
+  const dialogRef = useDialog(onClose);
   const [confirmOverwrite, setConfirmOverwrite] = useState(hasPlan);
   const [preferences, setPreferences] = useState('');
   const [includeStudy, setIncludeStudy] = useState(true);
@@ -149,7 +156,9 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
   const todayISO = fmtISO(new Date());
   const examsWithDates = exams.filter((e) =>
     !['done', 'failed', 'saltato'].includes(e.status)
-    && e.components.some((c) => c.dates.some((d) => d.date && fmtISO(d.date) >= todayISO))
+    && e.components.some((c) => c.dates.some((d) =>
+      d.date && d.preference !== 'excluded' && fmtISO(d.date) >= todayISO
+    ))
   );
 
   const generate = async () => {
@@ -186,13 +195,13 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
   if (confirmOverwrite) {
     return (
       <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="modal modal--confirm">
+        <div ref={dialogRef} className="modal modal--confirm" role="dialog" aria-modal="true" aria-labelledby="replace-plan-title">
           <div className="modal-hd">
             <div>
-              <h2>Sostituire il piano?</h2>
+              <h2 id="replace-plan-title">Sostituire il piano?</h2>
               <div className="sub">Hai già un Piano AI attivo.</div>
             </div>
-            <button className="modal-close" onClick={onClose}>✕</button>
+            <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
           </div>
           <div className="modal-body">
             <p style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ink-soft)', margin: 0 }}>
@@ -215,15 +224,15 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-plan">
+      <div ref={dialogRef} className="modal modal-plan" role="dialog" aria-modal="true" aria-labelledby="ai-plan-title">
         <div className="modal-hd">
           <div>
-            <h2>Piano Sessione AI</h2>
+            <h2 id="ai-plan-title">Piano Sessione AI</h2>
             <div className="sub">
               L'AI sceglie le date migliori tra quelle disponibili e propone 3 alternative.
             </div>
           </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
         </div>
 
         <div className="modal-body">
@@ -251,6 +260,8 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
                     <button
                       className={`pill ${slot.enabled ? 'on' : ''}`}
                       style={{ minWidth: 36, padding: '4px 8px', fontSize: 12 }}
+                      aria-pressed={slot.enabled}
+                      aria-label={`${slot.enabled ? 'Disattiva' : 'Attiva'} fascia ${i + 1}`}
                       onClick={() => setStudyPrefs((p) => ({
                         ...p,
                         studySlots: p.studySlots.map((s, j) => j === i ? { ...s, enabled: !s.enabled } : s),
@@ -263,6 +274,7 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
                       className="input"
                       value={slot.start}
                       disabled={!slot.enabled}
+                      aria-label={`Inizio fascia ${i + 1}`}
                       style={{ width: 100, padding: '4px 8px', fontSize: 13, opacity: slot.enabled ? 1 : 0.4 }}
                       onChange={(e) => setStudyPrefs((p) => ({
                         ...p,
@@ -275,6 +287,7 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
                       className="input"
                       value={slot.end}
                       disabled={!slot.enabled}
+                      aria-label={`Fine fascia ${i + 1}`}
                       style={{ width: 100, padding: '4px 8px', fontSize: 13, opacity: slot.enabled ? 1 : 0.4 }}
                       onChange={(e) => setStudyPrefs((p) => ({
                         ...p,
@@ -328,6 +341,8 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
                   className={`toggle-sw ${includeStudy ? 'on' : ''}`}
                   onClick={() => setIncludeStudy((v) => !v)}
                   aria-label="Includi blocchi di studio"
+                  role="switch"
+                  aria-checked={includeStudy}
                 />
               </div>
 

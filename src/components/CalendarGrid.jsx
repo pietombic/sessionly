@@ -52,7 +52,7 @@ function StudyBlock({ st, onHover, onMove, onLeave, onClick }) {
       <span className="study-color-dot" aria-hidden="true" />
       <span className="stype">{st.completed ? 'Fatto' : 'Studio'}</span>
       <span className="study-name" style={{ textDecoration: st.completed ? 'line-through' : 'none' }}>
-        {st.exam.name}
+        {st.title}
       </span>
     </div>
   );
@@ -95,6 +95,7 @@ function buildBuckets(cells, exams, sessions, datePicks, showAllDates) {
     buckets.get(key).studies.push({
       id: s.id,
       exam,
+      title: s.title || exam.name,
       label: s.notes || '',
       notes: s.notes || '',
       completed: s.status === 'completed',
@@ -131,8 +132,9 @@ export function CalendarGrid({ year, month, exams, events = [], datePicks = [], 
 
   const showStudy = (e, st) => show(e, (
     <>
-      <h4>Studio · {st.exam.name}</h4>
-      {st.label && <div className="ttline"><span className="l">Suggerito</span><span>{st.label}</span></div>}
+      <h4>{st.title}</h4>
+      {st.title !== st.exam.name && <div className="ttline"><span className="l">Esame</span><span>{st.exam.name}</span></div>}
+      {st.label && <div className="ttline"><span className="l">Note</span><span>{st.label}</span></div>}
       <div className="ttline">
         <span className="l">Carico</span>
         <span>{loadScore(st.exam.effort, st.exam.difficulty).label}</span>
@@ -191,6 +193,7 @@ export function CalendarGrid({ year, month, exams, events = [], datePicks = [], 
                       type: 'session',
                       eventId: st.id,
                       examName: st.exam.name,
+                      title: st.title,
                       label: st.label || '',
                       notes: st.notes || '',
                       completed: st.completed,

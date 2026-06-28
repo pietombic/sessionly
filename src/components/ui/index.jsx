@@ -28,7 +28,7 @@ export function StatusBadge({ status }) {
 }
 
 // ─── CustomSlider ─────────────────────────────────────────────────────────────
-export function CustomSlider({ value, onChange, variant = 'ticks', tone = 'ink' }) {
+export function CustomSlider({ value, onChange, variant = 'ticks', tone = 'ink', ariaLabel = 'Valore' }) {
   const trackRef = useRef(null);
   const valRef = useRef(value);
   valRef.current = value;
@@ -63,10 +63,31 @@ export function CustomSlider({ value, onChange, variant = 'ticks', tone = 'ink' 
     window.addEventListener('pointerup', up);
   };
 
+  const onKeyDown = (event) => {
+    let next = value;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = Math.min(10, value + 1);
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = Math.max(1, value - 1);
+    else if (event.key === 'Home') next = 1;
+    else if (event.key === 'End') next = 10;
+    else return;
+    event.preventDefault();
+    if (next !== value) onChange(next);
+  };
+
+  const sliderProps = {
+    role: 'slider',
+    tabIndex: 0,
+    'aria-valuemin': 1,
+    'aria-valuemax': 10,
+    'aria-valuenow': value,
+    'aria-label': ariaLabel,
+    onKeyDown,
+  };
+
   if (variant === 'ticks') {
     const pct = ((value - 1) / 9) * 100;
     return (
-      <div ref={trackRef} className="cust-slider" onPointerDown={onDown}>
+      <div ref={trackRef} className="cust-slider" onPointerDown={onDown} {...sliderProps}>
         <div className="track" />
         <div className="fill" style={{ width: `calc(${pct}%)` }} />
         <div className="ticks">
@@ -83,7 +104,7 @@ export function CustomSlider({ value, onChange, variant = 'ticks', tone = 'ink' 
 
   if (variant === 'bars') {
     return (
-      <div ref={trackRef} className={`cust-slider bars ${tone === 'amber' ? 'amber' : ''}`} onPointerDown={onDown}>
+      <div ref={trackRef} className={`cust-slider bars ${tone === 'amber' ? 'amber' : ''}`} onPointerDown={onDown} {...sliderProps}>
         <div className="segs">
           {Array.from({ length: 10 }, (_, i) => (
             <span key={i} className={`sg ${i < value ? 'on' : ''} ${i === value - 1 ? 'peak' : ''}`} />
@@ -94,7 +115,7 @@ export function CustomSlider({ value, onChange, variant = 'ticks', tone = 'ink' 
   }
 
   return (
-    <div ref={trackRef} className="cust-slider column" onPointerDown={onDown}>
+    <div ref={trackRef} className="cust-slider column" onPointerDown={onDown} {...sliderProps}>
       <div className="cols">
         {Array.from({ length: 10 }, (_, i) => (
           <span key={i} className={`cl ${i < value ? 'on' : ''}`} />

@@ -5,6 +5,7 @@ import {
   updateEventTask, deleteEventTask,
 } from '../lib/db.js';
 import { supabase } from '../lib/supabase.js';
+import { useDialog } from '../hooks/useDialog.js';
 
 function fmtDateISO(d) {
   if (!d) return '';
@@ -20,6 +21,7 @@ export function EventDetailModal({
   onOpenFullEditor,
   onClose,
 }) {
+  const dialogRef = useDialog(onClose);
   const isSession = detail.type === 'session';
   const isExam = detail.type === 'exam';
 
@@ -37,6 +39,9 @@ export function EventDetailModal({
   const [localRoom, setLocalRoom] = useState(isExam ? (detail.room || '') : '');
 
   // ── Session local edit state ──────────────────────────────────────────────
+  const [localTitle, setLocalTitle] = useState(
+    isSession ? (detail.title || detail.examName || '') : ''
+  );
   const [localNotes, setLocalNotes] = useState(isSession ? (detail.notes || '') : '');
   const sessionStart = isSession && detail.startISO ? new Date(detail.startISO) : null;
   const sessionEnd = isSession && detail.endISO ? new Date(detail.endISO) : null;
@@ -54,6 +59,7 @@ export function EventDetailModal({
   const [completed, setCompleted] = useState(isSession ? !!detail.completed : false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sessionTimeError, setSessionTimeError] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const [saving, setSaving] = useState(false);
 
@@ -157,6 +163,7 @@ export function EventDetailModal({
   // ── Save / delete ─────────────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
+    setActionError('');
     try {
       if (isExam) {
         const origDateISO = fmtDateISO(detail.date);
@@ -170,6 +177,9 @@ export function EventDetailModal({
         }
       } else if (isSession) {
         const patch = {};
+        if (localTitle.trim() !== (detail.title || detail.examName || '')) {
+          patch.title = localTitle.trim() || detail.examName || null;
+        }
         if (localNotes !== (detail.notes || '')) patch.notes = localNotes;
 
         if (sessionDate && sessionStartTime && sessionEndTime) {
@@ -191,37 +201,52 @@ export function EventDetailModal({
         if (Object.keys(patch).length > 0) await onUpdateSession(detail.eventId, patch);
       }
       onClose();
+    } catch (error) {
+      setActionError(error.message || 'Impossibile salvare le modifiche.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    await onDeleteSession(detail.eventId);
-    onClose();
+    setSaving(true);
+    setActionError('');
+    try {
+      const deleted = await onDeleteSession(detail.eventId);
+      if (deleted === false) throw new Error('Impossibile eliminare la sessione.');
+      onClose();
+    } catch (error) {
+      setActionError(error.message || 'Impossibile eliminare la sessione.');
+      setConfirmDelete(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const closeOnBackdrop = (e) => { if (e.target === e.currentTarget) onClose(); };
 
   // ── Derived display ───────────────────────────────────────────────────────
-  const title = isExam ? detail.examName : detail.examName;
+  const title = isExam ? detail.examName : (detail.title || detail.examName);
   const subtitle = isExam
     ? detail.componentName
-    : (detail.startTime && detail.endTime ? `${detail.startTime} – ${detail.endTime}` : 'Sessione di studio');
+    : [
+        detail.title && detail.title !== detail.examName ? detail.examName : null,
+        detail.startTime && detail.endTime ? `${detail.startTime} – ${detail.endTime}` : 'Sessione di studio',
+      ].filter(Boolean).join(' · ');
 
   const doneCount = tasks.filter((t) => t.completed).length;
 
   return (
     <div className="modal-backdrop" onClick={closeOnBackdrop}>
-      <div className="modal modal--compact event-detail">
+      <div ref={dialogRef} className="modal modal--compact event-detail" role="dialog" aria-modal="true" aria-labelledby="event-detail-title">
 
         {/* Header */}
         <div className="modal-hd">
           <div>
-            <h2 style={{ margin: 0 }}>{title}</h2>
+            <h2 id="event-detail-title" style={{ margin: 0 }}>{title}</h2>
             {subtitle && <div className="sub" style={{ marginTop: 2 }}>{subtitle}</div>}
           </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
         </div>
 
         <div className="modal-body">
@@ -271,6 +296,15 @@ export function EventDetailModal({
           {isSession && (
             <div className="session-edit-fields">
               <div className="field">
+                <label className="field-label">Titolo</label>
+                <input
+                  className="input"
+                  value={localTitle}
+                  onChange={(e) => setLocalTitle(e.target.value)}
+                  placeholder={detail.examName || 'Sessione di studio'}
+                />
+              </div>
+              <div className="field">
                 <label className="field-label">Data sessione</label>
                 <input className="input" type="date" value={sessionDate}
                   onChange={(e) => { setSessionDate(e.target.value); setSessionTimeError(''); }} />
@@ -297,6 +331,8 @@ export function EventDetailModal({
               </div>
             </div>
           )}
+
+          {actionError && <div className="ai-error" role="alert">{actionError}</div>}
 
           {/* ── Task list ── */}
           <div className="field task-block">
@@ -400,7 +436,9 @@ export function EventDetailModal({
           {isSession && confirmDelete && (
             <div className="delete-confirm-row" style={{ marginRight: 'auto' }}>
               <span className="delete-confirm-text">Eliminare?</span>
-              <button className="btn danger" style={{ padding: '5px 10px', fontSize: 12 }} onClick={handleDelete}>Sì</button>
+              <button className="btn danger" style={{ padding: '5px 10px', fontSize: 12 }} onClick={handleDelete} disabled={saving}>
+                {saving ? 'Eliminazione…' : 'Sì'}
+              </button>
               <button className="btn ghost" style={{ padding: '5px 10px', fontSize: 12 }} onClick={() => setConfirmDelete(false)}>No</button>
             </div>
           )}

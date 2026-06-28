@@ -1,3 +1,5 @@
+import { useDialog } from '../hooks/useDialog.js';
+
 function fmtDate(date) {
   return new Intl.DateTimeFormat('it-IT', {
     weekday: 'long',
@@ -8,12 +10,13 @@ function fmtDate(date) {
 }
 
 export function DaySummaryModal({ summary, onOpenEvent, onClose }) {
+  const dialogRef = useDialog(onClose);
   if (!summary) return null;
   const count = summary.events.length + summary.studies.length;
 
   return (
     <div className="modal-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal modal--compact day-summary-modal" role="dialog" aria-modal="true" aria-labelledby="day-summary-title">
+      <div ref={dialogRef} className="modal modal--compact day-summary-modal" role="dialog" aria-modal="true" aria-labelledby="day-summary-title">
         <div className="modal-hd">
           <div>
             <span className="modal-eyebrow">Riepilogo giornata</span>
@@ -37,6 +40,7 @@ export function DaySummaryModal({ summary, onOpenEvent, onClose }) {
                       type: 'session',
                       eventId: session.id,
                       examName: session.exam.name,
+                      title: session.title || session.exam.name,
                       notes: session.notes || '',
                       completed: session.completed,
                       startTime: session.startTime,
@@ -47,8 +51,13 @@ export function DaySummaryModal({ summary, onOpenEvent, onClose }) {
                   >
                     <span className="day-summary-time">{session.startTime}–{session.endTime}</span>
                     <span>
-                      <strong>{session.exam.name}</strong>
-                      <small>{session.completed ? 'Completata' : 'Pianificata'}</small>
+                      <strong>{session.title || session.exam.name}</strong>
+                      <small>
+                        {session.title && session.title !== session.exam.name
+                          ? `${session.exam.name} · `
+                          : ''}
+                        {session.completed ? 'Completata' : 'Pianificata'}
+                      </small>
                     </span>
                     <span aria-hidden="true">→</span>
                   </button>

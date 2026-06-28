@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { saveGroqKey, getGroqKey } from '../utils/groq.js';
+import { useDialog } from '../hooks/useDialog.js';
 
 export function GroqKeyModal({ onClose, onSaved }) {
+  const dialogRef = useDialog(onClose);
   const existing = getGroqKey();
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
@@ -21,13 +23,13 @@ export function GroqKeyModal({ onClose, onSaved }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal--compact" onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal modal--compact" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="groq-key-title">
         <div className="modal-hd">
           <div>
-            <h2>Configura Groq AI</h2>
+            <h2 id="groq-key-title">Configura Groq AI</h2>
             <div className="sub">La chiave viene salvata solo sul tuo browser, mai sui server.</div>
           </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
         </div>
 
         <div className="modal-body" style={{ gap: 16 }}>

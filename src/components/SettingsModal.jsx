@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getGroqKey } from '../utils/groq.js';
+import { useDialog } from '../hooks/useDialog.js';
 
 const PALETTES = [
   { id: 'classic', name: 'Classico', colors: ['#1e2b45', '#f6f5f8', '#6366f1'] },
@@ -62,19 +63,22 @@ export function SettingsModal({
   tweaks,
   onTweak,
   onGroqKey,
+  onImport,
+  onHelp,
   user,
   onLogout,
   onClose,
 }) {
+  const dialogRef = useDialog(onClose);
   const [tab, setTab] = useState('appearance');
   const initial = user?.email?.trim()?.[0]?.toUpperCase() || 'U';
 
   return (
     <div className="modal-backdrop settings-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal settings-modal">
+      <div ref={dialogRef} className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
         <div className="modal-hd settings-header">
           <div>
-            <h2>Impostazioni</h2>
+            <h2 id="settings-modal-title">Impostazioni</h2>
             <div className="sub">Personalizza Sessionly e gestisci il tuo account.</div>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
@@ -215,19 +219,27 @@ export function SettingsModal({
             )}
 
             {tab === 'ai' && (
-              <SettingsSection
-                title="Chiave Groq"
-                description="Usata per generare piani e importare esami dalle immagini. Rimane salvata solo nel browser."
-              >
-                <div className="settings-ai-card">
-                  <span className={getGroqKey() ? 'configured' : ''}>
-                    {getGroqKey() ? 'Configurata' : 'Non configurata'}
-                  </span>
-                  <button className="btn ghost" onClick={onGroqKey}>
-                    {getGroqKey() ? 'Modifica chiave' : 'Aggiungi chiave'}
-                  </button>
-                </div>
-              </SettingsSection>
+              <>
+                <SettingsSection
+                  title="Chiave Groq"
+                  description="Usata per generare piani e importare esami dalle immagini. Rimane salvata solo nel browser."
+                >
+                  <div className="settings-ai-card">
+                    <span className={getGroqKey() ? 'configured' : ''}>
+                      {getGroqKey() ? 'Configurata' : 'Non configurata'}
+                    </span>
+                    <button className="btn ghost" onClick={onGroqKey}>
+                      {getGroqKey() ? 'Modifica chiave' : 'Aggiungi chiave'}
+                    </button>
+                  </div>
+                </SettingsSection>
+                <SettingsSection
+                  title="Importazione esami"
+                  description="Riconosci esami e appelli da uno o più screenshot."
+                >
+                  <button className="btn ghost" onClick={onImport}>Importa da immagini</button>
+                </SettingsSection>
+              </>
             )}
 
             {tab === 'account' && (
@@ -242,6 +254,11 @@ export function SettingsModal({
                 <SettingsSection title="Sessione account" description="Disconnetti questo dispositivo dal tuo account.">
                   <button className="btn danger settings-logout" onClick={onLogout}>
                     Esci dall’account
+                  </button>
+                </SettingsSection>
+                <SettingsSection title="Guida" description="Rivedi in qualsiasi momento tutte le funzioni di Sessionly.">
+                  <button className="btn ghost" onClick={onHelp}>
+                    Come si usa Sessionly
                   </button>
                 </SettingsSection>
               </>

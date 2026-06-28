@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "node scripts/check-source.mjs",
+    "test": "node --test",
+    "check": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",

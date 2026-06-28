@@ -103,7 +103,13 @@ export function TodayDashboard({
 
   const examById = useMemo(() => new Map(exams.map((exam) => [exam.id, exam])), [exams]);
   const daysToExam = stats.nextExam
-    ? Math.max(0, Math.ceil((stats.nextExam.date.setHours(0, 0, 0, 0) - new Date(today).setHours(0, 0, 0, 0)) / DAY_MS))
+    ? (() => {
+        const examDate = new Date(stats.nextExam.date);
+        const currentDate = new Date(today);
+        examDate.setHours(0, 0, 0, 0);
+        currentDate.setHours(0, 0, 0, 0);
+        return Math.max(0, Math.ceil((examDate - currentDate) / DAY_MS));
+      })()
     : null;
 
   return (
@@ -182,7 +188,8 @@ export function TodayDashboard({
                   onClick={() => onOpenSession({
                     type: 'session',
                     eventId: event.id,
-                    examName: exam?.name || event.title || 'Sessione di studio',
+                    examName: exam?.name || 'Sessione di studio',
+                    title: event.title || exam?.name || 'Sessione di studio',
                     notes: event.notes || '',
                     completed,
                     startTime: fmtTime(event.start),
@@ -197,7 +204,7 @@ export function TodayDashboard({
                   </span>
                   <span className="today-session-marker" aria-hidden="true" />
                   <span className="today-session-copy">
-                    <strong>{exam?.name || event.title || 'Studio'}</strong>
+                    <strong>{event.title || exam?.name || 'Studio'}</strong>
                     <small>{completed ? 'Completata' : 'Sessione di studio'}</small>
                   </span>
                   <span className="today-session-arrow" aria-hidden="true">→</span>

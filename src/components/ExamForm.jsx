@@ -3,6 +3,7 @@ import { TAG_COLORS, TYPES } from '../data.js';
 import { loadScore, statusLabel, startOfDay } from '../utils/dates.js';
 import { CustomSlider, LoadBadge } from './ui/index.jsx';
 import { extractExamFromDescription } from '../utils/groq.js';
+import { useDialog } from '../hooks/useDialog.js';
 
 function toInputDate(d) {
   if (!d) return '';
@@ -36,9 +37,30 @@ const blank = {
   pdfCount: '',
   topics: '',
   materialDesc: '',
+  remainingHours: '',
+  completedHours: '',
+  preparationPercent: 0,
+  targetGrade: 'pass',
+  reviewBufferDays: 1,
+  preferredTime: 'any',
+  preferredBlockLength: 'medium',
+  componentDependency: 'independent',
+  missingMaterial: '',
+  materials: {
+    book: false,
+    notes: false,
+    exercises: false,
+    pastExams: false,
+  },
+  attemptHistory: {
+    count: 0,
+    lastGrade: '',
+    issues: '',
+  },
+  topicItems: [],
   components: [
-    { name: 'Scritto', dates: [{ id: 'n1', date: null, time: '', room: '', locked: false }] },
-    { name: 'Orale',   dates: [{ id: 'n2', date: null, time: '', room: '', locked: false }] },
+    { name: 'Scritto', dates: [{ id: 'n1', date: null, time: '', room: '', locked: false, preference: 'alternative' }] },
+    { name: 'Orale',   dates: [{ id: 'n2', date: null, time: '', room: '', locked: false, preference: 'alternative' }] },
   ],
 };
 
@@ -49,17 +71,68 @@ function reviveDates(key, val) {
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelete, onNoGroqKey }) {
+function topicId() {
+  return `topic_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function normalizeExam(source) {
+  const legacyTopics = typeof source?.topics === 'string'
+    ? source.topics.split('\n').map((name) => name.trim()).filter(Boolean)
+    : [];
+  const existingTopics = Array.isArray(source?.topicItems) ? source.topicItems : [];
+
+  return {
+    ...blank,
+    ...source,
+    materials: { ...blank.materials, ...(source?.materials || {}) },
+    attemptHistory: { ...blank.attemptHistory, ...(source?.attemptHistory || {}) },
+    topicItems: existingTopics.length
+      ? existingTopics.map((topic) => ({
+          id: topic.id || topicId(),
+          name: topic.name || '',
+          status: topic.status || 'todo',
+          difficulty: Number(topic.difficulty || 5),
+          estimatedHours: topic.estimatedHours ?? '',
+          importance: topic.importance || 'normal',
+        }))
+      : legacyTopics.map((name) => ({
+          id: topicId(),
+          name,
+          status: 'todo',
+          difficulty: 5,
+          estimatedHours: '',
+          importance: 'normal',
+        })),
+    components: (source?.components || blank.components).map((component) => ({
+      ...component,
+      dates: component.dates.map((date) => ({
+        ...date,
+        preference: date.preference || 'alternative',
+      })),
+    })),
+  };
+}
+
+export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, onSave, onDelete, onNoGroqKey }) {
   const isEditing = !!initial;
+  const dialogRef = useDialog(onClose);
 
   const [draft, setDraft] = useState(() => {
-    if (!initial) return blank;
-    return JSON.parse(JSON.stringify(initial), reviveDates);
+    if (!initial) return normalizeExam(null);
+    return normalizeExam(JSON.parse(JSON.stringify(initial), reviveDates));
   });
 
   // ── voice / AI section ──────────────────────────────────────────────────
   const [showProgramDetails, setShowProgramDetails] = useState(
-    !!(initial?.topics || initial?.pages || initial?.examApproach || initial?.materialDesc)
+    !!(
+      initial?.topics
+      || initial?.topicItems?.length
+      || initial?.pages
+      || initial?.examApproach
+      || initial?.materialDesc
+      || initial?.missingMaterial
+      || initial?.attemptHistory?.count
+    )
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
@@ -67,6 +140,9 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceError, setVoiceError] = useState('');
   const [recording, setRecording] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const recognitionRef = useRef(null);
 
   const toggleRecording = () => {
@@ -105,6 +181,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
               time: d.time,
               room: d.room,
               locked: d.locked,
+              preference: d.preference || 'alternative',
             })),
           }))
         : null;
@@ -127,7 +204,17 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
         ...(extracted.examApproach ? { examApproach: extracted.examApproach } : {}),
         ...(extracted.pages ? { pages: String(extracted.pages) } : {}),
         ...(extracted.pdfCount ? { pdfCount: String(extracted.pdfCount) } : {}),
-        ...(extracted.topics?.length ? { topics: extracted.topics.join('\n') } : {}),
+        ...(extracted.topics?.length ? {
+          topics: extracted.topics.join('\n'),
+          topicItems: extracted.topics.map((name) => ({
+            id: topicId(),
+            name,
+            status: 'todo',
+            difficulty: 5,
+            estimatedHours: '',
+            importance: 'normal',
+          })),
+        } : {}),
         ...(newComponents ? { components: newComponents, type: newType } : {}),
       }));
       if (extracted.examApproach || extracted.pages || extracted.topics?.length) {
@@ -165,7 +252,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
       const newComps = typeDef.components.map((cname) =>
         byName.get(cname) || {
           name: cname,
-          dates: [{ id: 'n_' + cname + Date.now(), date: null, time: '', room: '', locked: false }],
+          dates: [{ id: 'n_' + cname + Date.now(), date: null, time: '', room: '', locked: false, preference: 'alternative' }],
         }
       );
       return { ...prev, type: typeId, components: newComps };
@@ -183,7 +270,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
   const addDate = (ci) =>
     setComp(ci, (c) => ({
       ...c,
-      dates: [...c.dates, { id: 'n_' + Date.now(), date: null, time: '', room: '', locked: false }],
+      dates: [...c.dates, { id: 'n_' + Date.now(), date: null, time: '', room: '', locked: false, preference: 'alternative' }],
     }));
 
   const removeDate = (ci, dateId) =>
@@ -195,18 +282,165 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
       dates: c.dates.map((d) => (d.id === dateId ? { ...d, ...patch } : d)),
     }));
 
+  const toggleDateLock = (ci, dateId) =>
+    setComp(ci, (component) => {
+      const target = component.dates.find((date) => date.id === dateId);
+      const nextLocked = !target?.locked;
+      return {
+        ...component,
+        dates: component.dates.map((date) => date.id === dateId
+          ? {
+              ...date,
+              locked: nextLocked,
+              ...(nextLocked && date.preference === 'excluded' ? { preference: 'alternative' } : {}),
+            }
+          : (nextLocked ? { ...date, locked: false } : date)
+        ),
+      };
+    });
+
+  const updateDatePreference = (ci, dateId, preference) =>
+    setComp(ci, (component) => ({
+      ...component,
+      dates: component.dates.map((date) => {
+        if (date.id === dateId) return { ...date, preference };
+        if (preference === 'preferred' && date.preference === 'preferred') {
+          return { ...date, preference: 'alternative' };
+        }
+        return date;
+      }),
+    }));
+
   const set = (patch) => setDraft((prev) => ({ ...prev, ...patch }));
 
+  const updateTopic = (id, patch) => setDraft((prev) => ({
+    ...prev,
+    topicItems: prev.topicItems.map((topic) => topic.id === id ? { ...topic, ...patch } : topic),
+  }));
+
+  const addTopic = () => setDraft((prev) => ({
+    ...prev,
+    topicItems: [...prev.topicItems, {
+      id: topicId(),
+      name: '',
+      status: 'todo',
+      difficulty: 5,
+      estimatedHours: '',
+      importance: 'normal',
+    }],
+  }));
+
+  const removeTopic = (id) => setDraft((prev) => ({
+    ...prev,
+    topicItems: prev.topicItems.filter((topic) => topic.id !== id),
+  }));
+
+  const submit = async () => {
+    if (!draft.name.trim()) {
+      setFormError('Inserisci il nome dell’esame.');
+      return;
+    }
+    setFormError('');
+    const cleanTopics = draft.topicItems
+      .filter((topic) => topic.name.trim())
+      .map((topic) => ({ ...topic, name: topic.name.trim() }));
+    setSaving(true);
+    try {
+      await onSave({
+        ...draft,
+        name: draft.name.trim(),
+        code: draft.code.trim(),
+        topicItems: cleanTopics,
+        topics: cleanTopics.map((topic) => topic.name).join('\n'),
+      });
+    } catch (error) {
+      setFormError(error.message || 'Impossibile salvare l’esame.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteCurrentExam = async () => {
+    if (!initial?.id || deleting) return;
+    setDeleting(true);
+    try {
+      await onDelete(initial.id);
+    } catch (error) {
+      setFormError(error.message || 'Impossibile eliminare l’esame.');
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const planningDates = draft.components
+    .map((component) => component.dates
+      .map((date) => ({ ...date, componentName: component.name }))
+      .filter((date) => date.date && date.preference !== 'excluded')
+      .sort((a, b) => {
+        const rank = (entry) => entry.locked ? 0 : entry.preference === 'preferred' ? 1 : 2;
+        return rank(a) - rank(b) || a.date - b.date;
+      })[0]
+    )
+    .filter(Boolean)
+    .sort((a, b) => a.date - b.date);
+  const targetDate = planningDates[0]?.date || null;
+  const baseToday = startOfDay(today || new Date());
+  const daysToTarget = targetDate
+    ? Math.max(0, Math.ceil((startOfDay(targetDate) - baseToday) / 86400000))
+    : null;
+  const usableDays = daysToTarget == null
+    ? null
+    : Math.max(0, daysToTarget - Number(draft.reviewBufferDays || 0));
+  const remainingHours = Number(draft.remainingHours || 0);
+  const topicRemainingHours = draft.topicItems
+    .filter((topic) => topic.status !== 'ready')
+    .reduce((sum, topic) => sum + Number(topic.estimatedHours || 0), 0);
+  const planningHours = remainingHours > 0 ? remainingHours : topicRemainingHours;
+  const blockHours = draft.preferredBlockLength === 'short'
+    ? 1
+    : draft.preferredBlockLength === 'long' ? 3 : 2;
+  const estimatedSessions = planningHours > 0 ? Math.ceil(planningHours / blockHours) : null;
+  const hoursPerDay = planningHours > 0 && usableDays > 0 ? planningHours / usableDays : null;
+  const targetDateKey = targetDate ? toInputDate(targetDate) : null;
+  const overlappingExams = targetDateKey
+    ? allExams.filter((exam) =>
+        exam.id !== initial?.id
+        && exam.components?.some((component) =>
+          component.dates?.some((date) => date.date && toInputDate(date.date) === targetDateKey)
+        )
+      )
+    : [];
+  const feasibility = !targetDate
+    ? { tone: 'neutral', title: 'Aggiungi almeno un appello', text: 'Il riepilogo sarà disponibile quando inserirai una data valida.' }
+    : planningHours <= 0
+      ? { tone: 'neutral', title: `${daysToTarget} giorni disponibili`, text: 'Indica le ore rimanenti per stimare il carico del piano.' }
+      : usableDays <= 0
+        ? { tone: 'danger', title: 'Tempo insufficiente', text: 'Il buffer scelto occupa tutti i giorni disponibili prima dell’esame.' }
+        : hoursPerDay > 4
+          ? { tone: 'danger', title: 'Piano molto intenso', text: `Servirebbero circa ${hoursPerDay.toFixed(1)} ore al giorno.` }
+          : hoursPerDay > 2.5
+            ? { tone: 'warning', title: 'Piano impegnativo', text: `Servirebbero circa ${hoursPerDay.toFixed(1)} ore al giorno.` }
+            : { tone: 'good', title: 'Carico sostenibile', text: `Circa ${hoursPerDay.toFixed(1)} ore al giorno per arrivare al buffer.` };
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal--form" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop exam-form-backdrop" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="modal modal--form exam-form-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="exam-form-title"
+      >
         <div className="modal-hd">
           <div>
-            <h2>{isEditing ? draft.name || 'Modifica esame' : 'Nuovo esame'}</h2>
+            <span className="exam-form-eyebrow">{isEditing ? 'Editor esame' : 'Nuovo esame'}</span>
+            <h2 id="exam-form-title">{isEditing ? draft.name || 'Modifica esame' : 'Aggiungi un esame'}</h2>
             <div className="sub">
               {isEditing
-                ? 'Aggiorna dettagli, date e blocchi di studio.'
-                : "Inserisci l'esame con tutte le sue componenti."}
+                ? 'Aggiorna informazioni, appelli e stato di preparazione.'
+                : 'Inserisci le informazioni essenziali. Potrai modificarle in qualsiasi momento.'}
             </div>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
@@ -216,20 +450,22 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
 
           {/* ── AI voice section ──────────────────── */}
           {showVoice ? (
-            <div className="voice-section">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span className="field-label" style={{ margin: 0 }}>Descrivi l'esame</span>
-                <button className="modal-close" style={{ width: 22, height: 22, fontSize: 12 }} onClick={() => { setShowVoice(false); setVoiceError(''); }}>✕</button>
+            <div className="voice-section exam-ai-panel">
+              <div className="exam-ai-panel-head">
+                <div>
+                  <span className="field-label">Compilazione assistita</span>
+                  <strong>Descrivi l’esame con parole tue</strong>
+                </div>
+                <button className="modal-close exam-ai-close" onClick={() => { setShowVoice(false); setVoiceError(''); }} aria-label="Chiudi compilazione assistita">✕</button>
               </div>
               <textarea
-                className="input"
-                style={{ minHeight: 86, fontSize: 13, lineHeight: 1.5 }}
+                className="input exam-ai-textarea"
                 placeholder={'es. "Ho un esame di Analisi II il 24 giugno. C\'è tanto da studiare, è difficile. C\'è anche un orale il 7 luglio."'}
                 value={voiceText}
                 onChange={(e) => { setVoiceText(e.target.value); setVoiceError(''); }}
                 autoFocus
               />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="exam-ai-actions">
                 {SR && (
                   <button
                     type="button"
@@ -245,11 +481,10 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                   </button>
                 )}
                 {voiceError && (
-                  <span style={{ fontSize: 11.5, color: 'var(--warn)', flex: 1 }}>⚠ {voiceError}</span>
+                  <span className="exam-inline-error">⚠ {voiceError}</span>
                 )}
                 <button
-                  className={`ai-btn ${voiceLoading ? 'loading' : ''}`}
-                  style={{ marginLeft: 'auto', padding: '7px 12px', fontSize: 12 }}
+                  className={`ai-btn exam-ai-submit ${voiceLoading ? 'loading' : ''}`}
                   disabled={!voiceText.trim() || voiceLoading}
                   onClick={handleExtract}
                 >
@@ -261,25 +496,43 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
           ) : (
             <button
               type="button"
-              className="ai-btn"
-              style={{ alignSelf: 'flex-start', fontSize: 12, padding: '7px 12px' }}
+              className="exam-ai-trigger"
               onClick={() => setShowVoice(true)}
             >
-              <span>✦</span> Descrivi con AI
+              <span className="exam-ai-trigger-icon">✦</span>
+              <span>
+                <strong>Compila con l’AI</strong>
+                <small>Descrivi l’esame e prepara automaticamente il modulo</small>
+              </span>
+              <span aria-hidden="true">→</span>
             </button>
           )}
 
           {/* ── basics ─────────────────────────────── */}
-          <div className="col" style={{ gap: 12 }}>
+          <section className="exam-form-section">
+            <div className="exam-form-section-head">
+              <span>01</span>
+              <div>
+                <h3>Informazioni principali</h3>
+                <p>Nome, codice e colore usato nel calendario.</p>
+              </div>
+            </div>
+            <div className="exam-form-section-body">
             <div className="name-code-grid">
               <div className="field">
-                <label className="field-label">Nome esame</label>
+                <label className="field-label" htmlFor="exam-name">Nome esame</label>
                 <input
+                  id="exam-name"
                   className="input"
                   value={draft.name}
                   placeholder="es. Analisi Matematica II"
-                  onChange={(e) => set({ name: e.target.value })}
+                  onChange={(e) => {
+                    set({ name: e.target.value });
+                    if (formError) setFormError('');
+                  }}
+                  aria-invalid={!!formError}
                 />
+                {formError && <div className="exam-field-error" role="alert">{formError}</div>}
               </div>
               <div className="field">
                 <label className="field-label">Codice</label>
@@ -306,11 +559,19 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                 ))}
               </div>
             </div>
-          </div>
+            </div>
+          </section>
 
           {/* ── exam type ──────────────────────────── */}
-          <div className="field">
-            <label className="field-label">Tipologia esame</label>
+          <section className="exam-form-section">
+            <div className="exam-form-section-head">
+              <span>02</span>
+              <div>
+                <h3>Struttura dell’esame</h3>
+                <p>Scegli le prove previste. Potrai inserire più appelli per ogni componente.</p>
+              </div>
+            </div>
+            <div className="exam-form-section-body">
             <div className="type-grid">
               {TYPES.map((t) => (
                 <button
@@ -319,15 +580,89 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                   onClick={() => onTypeChange(t.id)}
                 >
                   <span className="ttype-icon">{t.short}</span>
-                  <span>{t.label}</span>
+                  <span className="type-card-copy">
+                    <strong>{t.label}</strong>
+                    <small>{t.components.join(' + ')}</small>
+                  </span>
+                  <span className="type-card-check" aria-hidden="true">{draft.type === t.id ? '✓' : ''}</span>
                 </button>
               ))}
             </div>
-          </div>
+            </div>
+          </section>
 
           {/* ── sliders ──────────────────────────── */}
-          <div className="field">
-            <label className="field-label">Effort &amp; Difficoltà</label>
+          <section className="exam-form-section">
+            <div className="exam-form-section-head">
+              <span>03</span>
+              <div>
+                <h3>Carico di preparazione</h3>
+                <p>Aiuta il piano a distribuire correttamente tempo e priorità.</p>
+              </div>
+            </div>
+            <div className="exam-form-section-body exam-workload-body">
+            <div className="exam-preparation-grid">
+              <div className="field">
+                <label className="field-label">Ore ancora necessarie</label>
+                <div className="input-with-suffix">
+                  <input
+                    type="number"
+                    className="input mono"
+                    min={0}
+                    step={0.5}
+                    placeholder="es. 45"
+                    value={draft.remainingHours}
+                    onChange={(e) => set({ remainingHours: e.target.value })}
+                  />
+                  <span>ore</span>
+                </div>
+                <div className="field-hint">La stima più utile per dimensionare il piano.</div>
+              </div>
+              <div className="field">
+                <label className="field-label">Ore già svolte</label>
+                <div className="input-with-suffix">
+                  <input
+                    type="number"
+                    className="input mono"
+                    min={0}
+                    step={0.5}
+                    placeholder="es. 12"
+                    value={draft.completedHours}
+                    onChange={(e) => set({ completedHours: e.target.value })}
+                  />
+                  <span>ore</span>
+                </div>
+              </div>
+              <div className="field preparation-field">
+                <label className="field-label">Preparazione attuale</label>
+                <div className="preparation-control">
+                  <div className="preparation-segments" aria-hidden="true">
+                    {Array.from({ length: 10 }, (_, index) => (
+                      <span
+                        key={index}
+                        className={index * 10 < draft.preparationPercent ? 'is-active' : ''}
+                      />
+                    ))}
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={draft.preparationPercent}
+                    onChange={(e) => set({ preparationPercent: Number(e.target.value) })}
+                    aria-label="Percentuale di preparazione attuale"
+                  />
+                  <strong>{draft.preparationPercent}%</strong>
+                </div>
+                <div className="field-hint">Quanto ti senti pronto oggi, considerando tutto il programma.</div>
+              </div>
+            </div>
+
+            <div className="exam-subsection-label">
+              <span>Valutazione qualitativa</span>
+              <small>Serve a distinguere quantità di lavoro e difficoltà concettuale.</small>
+            </div>
             <div className="slider-row">
               <div className="slider-block">
                 <div className="slider-head">
@@ -339,6 +674,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                   onChange={(v) => set({ effort: v })}
                   variant={sliderStyle}
                   tone="amber"
+                  ariaLabel="Effort dell’esame"
                 />
                 <div className="scale"><span>Poche ore</span><span>Mesi</span></div>
               </div>
@@ -351,17 +687,17 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                   value={draft.difficulty}
                   onChange={(v) => set({ difficulty: v })}
                   variant={sliderStyle}
+                  ariaLabel="Difficoltà dell’esame"
                 />
                 <div className="scale"><span>Accessibile</span><span>Ostico</span></div>
               </div>
             </div>
-            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="exam-load-badge">
               <LoadBadge effort={draft.effort} difficulty={draft.difficulty} />
             </div>
-          </div>
 
           {/* ── CFU & Open Book ─────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div className="exam-two-column">
             <div className="field">
               <label className="field-label">CFU</label>
               <input
@@ -399,12 +735,9 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
 
           {/* ── parziali ─────────────────────────── */}
           {hasParziali && (
-            <div className="field" style={{
-              padding: 14, background: 'var(--paper-2)',
-              border: '1px solid var(--rule)', borderRadius: 4,
-            }}>
+            <div className="field exam-partial-panel">
               <label className="field-label">Stato parziali</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 6 }}>
+              <div className="exam-partial-row">
                 <button
                   className={`toggle-lock ${draft.partial1Done ? 'on' : ''}`}
                   onClick={() => set({ partial1Done: !draft.partial1Done })}
@@ -412,17 +745,16 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                   {draft.partial1Done ? '✓' : '○'} Parziale 1 sostenuto
                 </button>
                 {draft.partial1Done && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>Voto:</span>
+                  <div className="exam-partial-grade">
+                    <span>Voto:</span>
                     <input
                       type="number"
-                      className="input mono"
-                      style={{ width: 70, padding: '6px 10px' }}
+                      className="input mono exam-grade-input"
                       min={0} max={31}
                       value={draft.partial1Grade}
                       onChange={(e) => set({ partial1Grade: Number(e.target.value) })}
                     />
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-soft)' }}>/30</span>
+                    <span>/30</span>
                     <span
                       className={`badge ${draft.partial1Grade >= 18 ? 'status-done' : ''}`}
                       style={draft.partial1Grade < 18 ? { color: 'var(--warn)', borderColor: 'var(--warn)' } : {}}
@@ -434,13 +766,43 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
               </div>
             </div>
           )}
+            </div>
+          </section>
 
           {/* ── components & dates ────────────────── */}
+          <section className="exam-form-section">
+            <div className="exam-form-section-head">
+              <span>04</span>
+              <div>
+                <h3>Date e appelli</h3>
+                <p>Inserisci data, ora e aula. Blocca una data se non deve essere spostata dal piano.</p>
+              </div>
+            </div>
+            <div className="exam-form-section-body exam-dates-body">
+          {draft.components.length > 1 && (
+            <div className="field exam-dependency-field">
+              <label className="field-label">Relazione tra le prove</label>
+              <select
+                className="input"
+                value={draft.componentDependency}
+                onChange={(e) => set({ componentDependency: e.target.value })}
+              >
+                <option value="independent">Le prove sono indipendenti</option>
+                <option value="sequential">La prova successiva richiede il superamento della precedente</option>
+                <option value="wait-result">Devo attendere il risultato prima della prova successiva</option>
+                <option value="same-session">Le prove devono essere sostenute nella stessa sessione</option>
+              </select>
+            </div>
+          )}
+          <div className="exam-lock-explanation">
+            <span aria-hidden="true">🔒</span>
+            <span><strong>Data bloccata</strong> significa che l’appello è fisso o unico e deve essere rispettato dal piano.</span>
+          </div>
           {draft.components.map((comp, ci) => (
             <div key={comp.name} className="date-component">
               <div className="comp-hd">
                 <h4>{comp.name}</h4>
-                <button className="btn-text" onClick={() => addDate(ci)}>+ Data</button>
+                <button className="btn-text exam-add-date" onClick={() => addDate(ci)}>+ Aggiungi appello</button>
               </div>
               <div className="date-rows">
                 {comp.dates.map((dt) => (
@@ -448,30 +810,37 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                     <input
                       type="date"
                       className="input mono"
-                      style={{ padding: '7px 10px' }}
                       value={toInputDate(dt.date)}
                       onChange={(e) => updateDate(ci, dt.id, { date: fromInputDate(e.target.value) })}
                     />
                     <input
                       type="time"
                       className="input mono"
-                      style={{ padding: '7px 10px' }}
                       value={dt.time}
                       onChange={(e) => updateDate(ci, dt.id, { time: e.target.value })}
                     />
                     <input
                       className="input"
-                      style={{ padding: '7px 10px' }}
                       placeholder="Sede / aula"
                       value={dt.room}
                       onChange={(e) => updateDate(ci, dt.id, { room: e.target.value })}
                     />
+                    <select
+                      className="input date-preference-select"
+                      value={dt.preference || 'alternative'}
+                      onChange={(e) => updateDatePreference(ci, dt.id, e.target.value)}
+                      aria-label={`Preferenza appello ${comp.name}`}
+                    >
+                      <option value="preferred">Preferito</option>
+                      <option value="alternative">Alternativo</option>
+                      <option value="excluded" disabled={dt.locked}>Escludi dal piano</option>
+                    </select>
                     <button
                       className={`toggle-lock ${dt.locked ? 'on' : ''}`}
-                      onClick={() => updateDate(ci, dt.id, { locked: !dt.locked })}
+                      onClick={() => toggleDateLock(ci, dt.id)}
                       title="Data bloccata: non spostabile"
                     >
-                      {dt.locked ? '🔒' : '○'} {dt.locked ? 'Bloccata' : 'Mobile'}
+                      {dt.locked ? '🔒' : '○'} {dt.locked ? 'Bloccata' : 'Flessibile'}
                     </button>
                     <button
                       className="icon-x"
@@ -485,9 +854,57 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
               </div>
             </div>
           ))}
+            </div>
+          </section>
 
           {/* ── priority & status ───────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <section className="exam-form-section">
+            <div className="exam-form-section-head">
+              <span>05</span>
+              <div>
+                <h3>Organizzazione</h3>
+                <p>Definisci priorità, stato attuale e note personali.</p>
+              </div>
+            </div>
+            <div className="exam-form-section-body">
+          <div className="exam-planning-preferences">
+            <div className="field">
+              <label className="field-label">Obiettivo</label>
+              <select className="input" value={draft.targetGrade} onChange={(e) => set({ targetGrade: e.target.value })}>
+                <option value="pass">Superare l’esame</option>
+                <option value="24">Puntare almeno al 24</option>
+                <option value="27">Puntare almeno al 27</option>
+                <option value="30">Puntare al 30</option>
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Buffer prima dell’esame</label>
+              <select className="input" value={draft.reviewBufferDays} onChange={(e) => set({ reviewBufferDays: Number(e.target.value) })}>
+                <option value={0}>Nessun buffer</option>
+                <option value={1}>1 giorno solo ripasso</option>
+                <option value={2}>2 giorni per ripasso e simulazioni</option>
+                <option value={3}>3 giorni di consolidamento</option>
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Momento preferito</label>
+              <select className="input" value={draft.preferredTime} onChange={(e) => set({ preferredTime: e.target.value })}>
+                <option value="any">Indifferente</option>
+                <option value="morning">Mattina</option>
+                <option value="afternoon">Pomeriggio</option>
+                <option value="evening">Sera</option>
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Durata ideale dei blocchi</label>
+              <select className="input" value={draft.preferredBlockLength} onChange={(e) => set({ preferredBlockLength: e.target.value })}>
+                <option value="short">Brevi · circa 1 ora</option>
+                <option value="medium">Medie · circa 2 ore</option>
+                <option value="long">Lunghe · circa 3 ore</option>
+              </select>
+            </div>
+          </div>
+          <div className="exam-two-column">
             <div className="field">
               <label className="field-label">Priorità</label>
               <div className="pills">
@@ -529,6 +946,8 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
               onChange={(e) => set({ notes: e.target.value })}
             />
           </div>
+            </div>
+          </section>
 
           {/* ── program details (collapsible) ─── */}
           <div className="program-details-section">
@@ -538,8 +957,14 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
               onClick={() => setShowProgramDetails((v) => !v)}
             >
               <span>{showProgramDetails ? '▾' : '▸'}</span>
-              Dettagli programma
-              {(draft.examApproach || draft.pages || draft.topics || draft.materialDesc) && (
+              Programma, materiali e storico
+              {Boolean(
+                draft.examApproach
+                || draft.pages
+                || draft.topicItems.length
+                || draft.materialDesc
+                || draft.attemptHistory.count
+              ) && (
                 <span className="program-details-dot" />
               )}
             </button>
@@ -571,7 +996,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="exam-two-column">
                   <div className="field">
                     <label className="field-label">Pagine totali</label>
                     <input
@@ -597,28 +1022,181 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
                 </div>
 
                 <div className="field">
-                  <label className="field-label">Argomenti del programma</label>
-                  <textarea
-                    className="input"
-                    style={{ minHeight: 90 }}
-                    placeholder={'Un argomento per riga:\nAlgebra lineare\nSerie di Fourier\nEquazioni differenziali'}
-                    value={draft.topics}
-                    onChange={(e) => set({ topics: e.target.value })}
-                  />
-                  <div className="field-hint">L'AI dividerà questi argomenti nelle sessioni di studio.</div>
+                  <div className="topic-list-head">
+                    <div>
+                      <label className="field-label">Checklist degli argomenti</label>
+                      <div className="field-hint">Sei tu a definire i contenuti; il piano usa stato e ore per stimare il lavoro.</div>
+                    </div>
+                    <button className="btn-text exam-add-date" type="button" onClick={addTopic}>+ Argomento</button>
+                  </div>
+                  {draft.topicItems.length === 0 ? (
+                    <button className="topic-empty-state" type="button" onClick={addTopic}>
+                      Aggiungi il primo argomento del programma
+                    </button>
+                  ) : (
+                    <div className="topic-editor-list">
+                      {draft.topicItems.map((topic) => (
+                        <div className="topic-editor-row" key={topic.id}>
+                          <input
+                            className="input topic-name-input"
+                            value={topic.name}
+                            placeholder="Nome argomento"
+                            onChange={(e) => updateTopic(topic.id, { name: e.target.value })}
+                          />
+                          <select
+                            className="input topic-status"
+                            value={topic.status}
+                            onChange={(e) => updateTopic(topic.id, { status: e.target.value })}
+                            aria-label={`Stato ${topic.name || 'argomento'}`}
+                          >
+                            <option value="todo">Da iniziare</option>
+                            <option value="studying">In studio</option>
+                            <option value="review">Da ripassare</option>
+                            <option value="ready">Pronto</option>
+                          </select>
+                          <select
+                            className="input topic-importance"
+                            value={topic.importance}
+                            onChange={(e) => updateTopic(topic.id, { importance: e.target.value })}
+                            aria-label={`Importanza ${topic.name || 'argomento'}`}
+                          >
+                            <option value="low">Secondario</option>
+                            <option value="normal">Normale</option>
+                            <option value="high">Fondamentale</option>
+                          </select>
+                          <select
+                            className="input topic-difficulty"
+                            value={topic.difficulty}
+                            onChange={(e) => updateTopic(topic.id, { difficulty: Number(e.target.value) })}
+                            aria-label={`Difficoltà ${topic.name || 'argomento'}`}
+                          >
+                            <option value={3}>Semplice</option>
+                            <option value={5}>Media</option>
+                            <option value={8}>Difficile</option>
+                          </select>
+                          <div className="input-with-suffix topic-hours">
+                            <input
+                              className="input mono"
+                              type="number"
+                              min={0}
+                              step={0.5}
+                              value={topic.estimatedHours}
+                              placeholder="Ore"
+                              onChange={(e) => updateTopic(topic.id, { estimatedHours: e.target.value })}
+                            />
+                            <span>h</span>
+                          </div>
+                          <button className="icon-x" type="button" onClick={() => removeTopic(topic.id)} aria-label={`Rimuovi ${topic.name || 'argomento'}`}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="field">
-                  <label className="field-label">Materiale di studio</label>
+                  <label className="field-label">Materiale disponibile</label>
+                  <div className="material-check-grid">
+                    {[
+                      ['book', 'Libro o manuale'],
+                      ['notes', 'Dispense o slide'],
+                      ['exercises', 'Esercizi'],
+                      ['pastExams', 'Prove degli anni precedenti'],
+                    ].map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`material-check ${draft.materials[key] ? 'on' : ''}`}
+                        onClick={() => set({
+                          materials: { ...draft.materials, [key]: !draft.materials[key] },
+                        })}
+                        aria-pressed={draft.materials[key]}
+                      >
+                        <span>{draft.materials[key] ? '✓' : '○'}</span>{label}
+                      </button>
+                    ))}
+                  </div>
                   <textarea
-                    className="input"
-                    style={{ minHeight: 72 }}
+                    className="input exam-material-input"
                     placeholder={'es. Libro di testo (Cormen), 8 slide del prof, raccolta esercizi anni passati…'}
                     value={draft.materialDesc}
                     onChange={(e) => set({ materialDesc: e.target.value })}
                   />
                   <div className="field-hint">Descrivi cosa hai a disposizione: libri, slide, esercizi, video…</div>
                 </div>
+
+                <div className="field">
+                  <label className="field-label">Materiale ancora mancante</label>
+                  <input
+                    className="input"
+                    value={draft.missingMaterial}
+                    placeholder="es. Soluzioni delle prove 2025"
+                    onChange={(e) => set({ missingMaterial: e.target.value })}
+                  />
+                </div>
+
+                <div className="exam-history-panel">
+                  <div>
+                    <label className="field-label">Tentativi precedenti</label>
+                    <div className="field-hint">Informazioni opzionali per non ripetere gli stessi errori.</div>
+                  </div>
+                  <div className="exam-history-grid">
+                    <div className="field">
+                      <label className="field-label">Numero tentativi</label>
+                      <input
+                        type="number"
+                        min={0}
+                        className="input mono"
+                        value={draft.attemptHistory.count}
+                        onChange={(e) => set({
+                          attemptHistory: { ...draft.attemptHistory, count: Number(e.target.value) },
+                        })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label className="field-label">Ultimo voto/esito</label>
+                      <input
+                        className="input"
+                        value={draft.attemptHistory.lastGrade}
+                        placeholder="es. 17 oppure ritirato"
+                        onChange={(e) => set({
+                          attemptHistory: { ...draft.attemptHistory, lastGrade: e.target.value },
+                        })}
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label className="field-label">Problemi riscontrati</label>
+                    <textarea
+                      className="input"
+                      value={draft.attemptHistory.issues}
+                      placeholder="es. Poco tempo negli esercizi, insicurezza sugli integrali…"
+                      onChange={(e) => set({
+                        attemptHistory: { ...draft.attemptHistory, issues: e.target.value },
+                      })}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className={`exam-feasibility exam-feasibility--${feasibility.tone}`}>
+            <div className="exam-feasibility-icon" aria-hidden="true">
+              {feasibility.tone === 'good' ? '✓' : feasibility.tone === 'danger' ? '!' : feasibility.tone === 'warning' ? '△' : 'i'}
+            </div>
+            <div className="exam-feasibility-copy">
+              <span className="field-label">Impatto sul piano</span>
+              <strong>{feasibility.title}</strong>
+              <p>{feasibility.text}</p>
+            </div>
+            <div className="exam-feasibility-stats">
+              <span><strong>{daysToTarget ?? '—'}</strong><small>giorni</small></span>
+              <span><strong>{estimatedSessions ?? '—'}</strong><small>sessioni</small></span>
+              <span><strong>{overlappingExams.length}</strong><small>conflitti</small></span>
+            </div>
+            {overlappingExams.length > 0 && (
+              <div className="exam-feasibility-warning">
+                Nella stessa data: {overlappingExams.map((exam) => exam.name).join(', ')}
               </div>
             )}
           </div>
@@ -626,7 +1204,7 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
           {/* ── exam outcome (shown only when date has passed) ── */}
           {examHasPassed && (
             <div className="outcome-section">
-              <div className="field-label" style={{ marginBottom: 10 }}>Com'è andata?</div>
+              <div className="field-label outcome-title">Com'è andata?</div>
               <div className="outcome-btns">
                 <button
                   className={`outcome-btn outcome-passed ${draft.status === 'done' ? 'on' : ''}`}
@@ -684,7 +1262,9 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
               ) : (
                 <div className="delete-confirm-row">
                   <span className="delete-confirm-text">Sicuro?</span>
-                  <button className="btn danger" onClick={() => onDelete(initial.id)}>Sì, elimina</button>
+                  <button className="btn danger" onClick={deleteCurrentExam} disabled={deleting}>
+                    {deleting ? 'Eliminazione…' : 'Sì, elimina'}
+                  </button>
                   <button className="btn ghost" style={{ padding: '7px 12px' }} onClick={() => setConfirmDelete(false)}>Annulla</button>
                 </div>
               )}
@@ -702,19 +1282,19 @@ export function ExamForm({ initial, sliderStyle, today, onClose, onSave, onDelet
             {isEditing && confirmDelete && (
               <div className="delete-confirm-row">
                 <span className="delete-confirm-text">Sicuro?</span>
-                <button className="btn danger" onClick={() => onDelete(initial.id)}>
-                  Sì, elimina
+                <button className="btn danger" onClick={deleteCurrentExam} disabled={deleting}>
+                  {deleting ? 'Eliminazione…' : 'Sì, elimina'}
                 </button>
-                <button className="btn ghost" style={{ padding: '7px 12px' }} onClick={() => setConfirmDelete(false)}>
+                <button className="btn ghost" onClick={() => setConfirmDelete(false)}>
                   Annulla
                 </button>
               </div>
             )}
           </div>
-          <div className="row" style={{ gap: 8 }}>
+          <div className="exam-form-primary-actions">
             <button className="btn ghost" onClick={onClose}>Annulla</button>
-            <button className="btn" onClick={() => onSave(draft)}>
-              {isEditing ? 'Salva modifiche' : 'Aggiungi esame'}
+            <button className="btn" onClick={submit} disabled={saving || deleting}>
+              {saving ? 'Salvataggio…' : isEditing ? 'Salva modifiche' : 'Aggiungi esame'}
             </button>
           </div>
         </div>

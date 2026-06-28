@@ -1,16 +1,25 @@
-import { getFilteredEvents, downloadFilteredICS, googleCalendarURL, formatShortDate } from '../utils/calendarExport.js';
+import {
+  getFilteredEvents,
+  downloadFilteredICS,
+  googleCalendarURL,
+  googleStudyCalendarURL,
+  formatShortDate,
+} from '../utils/calendarExport.js';
 import { TAG_CSS } from '../data.js';
+import { useDialog } from '../hooks/useDialog.js';
 
-export function CalendarExportModal({ exams, datePicks = [], onClose }) {
-  const hasPlan = datePicks.length > 0;
-  const events = getFilteredEvents(exams, datePicks);
+export function CalendarExportModal({ exams, datePicks = [], showAllDates = false, studyEvents = [], onClose }) {
+  const dialogRef = useDialog(onClose);
+  const hasPlan = datePicks.length > 0 && !showAllDates;
+  const events = getFilteredEvents(exams, datePicks, showAllDates);
+  const sessions = studyEvents.filter((event) => event.type === 'study');
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal export-modal" onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal export-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="export-modal-title">
         <div className="modal-hd">
           <div>
-            <h2>Esporta Calendario</h2>
+            <h2 id="export-modal-title">Esporta Calendario</h2>
             <div className="sub">
               {hasPlan
                 ? 'Solo le date scelte dal Piano AI.'
@@ -45,7 +54,7 @@ export function CalendarExportModal({ exams, datePicks = [], onClose }) {
               </p>
               <button
                 className="btn"
-                onClick={() => downloadFilteredICS(exams, datePicks)}
+                onClick={() => downloadFilteredICS(exams, datePicks, showAllDates, sessions)}
                 style={{ marginTop: 4 }}
               >
                 Scarica .ics
@@ -66,7 +75,7 @@ export function CalendarExportModal({ exams, datePicks = [], onClose }) {
                 letterSpacing: '0.05em',
                 textTransform: 'uppercase',
               }}>
-                {events.length} {events.length === 1 ? 'evento' : 'eventi'} sotto ↓
+                {events.length + sessions.length} eventi sotto ↓
               </span>
             </div>
           </div>
@@ -102,7 +111,33 @@ export function CalendarExportModal({ exams, datePicks = [], onClose }) {
             </>
           )}
 
-          {events.length === 0 && (
+          {sessions.length > 0 && (
+            <>
+              <div className="export-section-label">Sessioni di studio</div>
+              <div className="export-event-list scroll">
+                {sessions.map((event) => {
+                  const start = new Date(event.start_time);
+                  const end = new Date(event.end_time);
+                  return (
+                    <div key={event.id} className="export-event-row">
+                      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                        <span className="ev-name">{event.title || 'Sessione di studio'}</span>
+                        <span style={{ fontSize: 11, color: 'var(--ink-soft)', fontFamily: 'var(--mono)' }}>
+                          {start.toLocaleDateString('it-IT')} · {start.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                          –{end.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <a className="ev-link" href={googleStudyCalendarURL(event)} target="_blank" rel="noopener noreferrer">
+                        Aggiungi
+                      </a>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {events.length === 0 && sessions.length === 0 && (
             <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--ink-soft)', fontSize: 13 }}>
               Nessun evento con date inserite.
             </div>
@@ -111,7 +146,7 @@ export function CalendarExportModal({ exams, datePicks = [], onClose }) {
 
         <div className="modal-ft">
           <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
-            {exams.length} {exams.length === 1 ? 'esame' : 'esami'} · {events.length} {events.length === 1 ? 'data' : 'date'}
+            {events.length} {events.length === 1 ? 'data' : 'date'} · {sessions.length} sessioni
             {hasPlan ? ' (piano AI)' : ''}
           </span>
           <button className="btn ghost" onClick={onClose}>Chiudi</button>

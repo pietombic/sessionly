@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialog } from '../hooks/useDialog.js';
 
 const STEPS = [
   {
@@ -19,12 +20,13 @@ const STEPS = [
 ];
 
 export function OnboardingModal({ onComplete, onOpenGuide }) {
+  const dialogRef = useDialog(null);
   const [step, setStep] = useState(0);
   const current = STEPS[step];
 
   return (
     <div className="modal-backdrop onboarding-backdrop">
-      <div className="modal onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+      <div ref={dialogRef} className="modal onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
         <div className="onboarding-progress" aria-label={`Passaggio ${step + 1} di ${STEPS.length}`}>
           {STEPS.map((entry, index) => (
             <span key={entry.number} className={index <= step ? 'is-active' : ''} />

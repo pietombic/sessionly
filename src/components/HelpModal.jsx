@@ -1,3 +1,5 @@
+import { useDialog } from '../hooks/useDialog.js';
+
 const SECTIONS = [
   {
     icon: '01',
@@ -15,12 +17,13 @@ const SECTIONS = [
     icon: '02',
     title: 'Inserisci gli esami',
     body: [
-      'Premi Esame o Aggiungi per creare un esame con nome, tipologia, stato, effort, difficoltà e tutte le date disponibili.',
-      'Ogni componente — scritto, orale, progetto o parziale — può avere più appelli, orari, aule e una data bloccata.',
+      'Premi Esame o Aggiungi per creare un esame con date, ore rimanenti, preparazione attuale, obiettivo e preferenze di studio.',
+      'Ogni componente — scritto, orale, progetto o parziale — può avere più appelli, una data preferita, alternative ed eventuali date bloccate.',
     ],
     tips: [
       'Descrivi con AI compila il modulo partendo da testo o dettatura.',
-      'La sezione Dettagli programma raccoglie approccio, pagine, PDF e argomenti.',
+      'Programma, materiali e storico raccoglie la checklist degli argomenti, il materiale disponibile e gli eventuali tentativi precedenti.',
+      'Il riepilogo Impatto sul piano segnala carichi troppo intensi e sovrapposizioni con altri esami.',
     ],
   },
   {
@@ -43,6 +46,7 @@ const SECTIONS = [
     ],
     tips: [
       'Ogni fascia attiva diventa una sessione completa: 09:00–12:00 genera un unico blocco 09:00–12:00.',
+      'Le date bloccate restano vincoli assoluti; appelli preferiti, dipendenze tra prove, buffer e ore rimanenti guidano la scelta del piano.',
       'Il piano decide la materia assegnata, non gli argomenti da studiare: note e task restano personali.',
       'Se esiste già un piano viene richiesta una conferma prima di sostituirlo.',
     ],
@@ -131,13 +135,14 @@ const SECTIONS = [
 ];
 
 export function HelpModal({ onClose }) {
+  const dialogRef = useDialog(onClose);
   return (
     <div className="help-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="help-modal">
+      <div ref={dialogRef} className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
         <div className="help-hd">
           <div>
             <span className="help-eyebrow">Benvenuto in Sessionly</span>
-            <h1 className="help-title">Come funziona l’applicazione</h1>
+            <h1 id="help-title" className="help-title">Come funziona l’applicazione</h1>
             <p className="help-subtitle">
               Dall’inserimento degli esami alla gestione quotidiana delle sessioni.
               Questa schermata viene mostrata automaticamente soltanto al primo accesso.

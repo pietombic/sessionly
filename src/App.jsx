@@ -1,38 +1,42 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './lib/supabase.js';
 import {
-  fetchExams, upsertExam, removeExam,
-  fetchStudyWindows, replaceStudyWindows, removeStudyWindowsForExam,
-  fetchDatePicks, replaceDatePicks, removeDatePicksForExam,
+  fetchExams, upsertExam, deleteExamData,
+  fetchStudyWindows,
+  fetchDatePicks,
   updateStudyWindowComplete, clearPlan,
-  createStudyEvents, deleteAllPlannedEvents, deleteEvent,
+  buildStudyEvents, replacePlanAtomically, deleteEvent,
   fetchEvents, updateEvent, createManualSessions,
   fetchOnboardingCompleted, completeOnboarding,
+  updateExamDateAndTasks,
 } from './lib/db.js';
-import { TODAY } from './data.js';
 import { hasGroqKey } from './utils/groq.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { MonthHeader } from './components/MonthHeader.jsx';
 import { CalendarGrid } from './components/CalendarGrid.jsx';
 import { WeekGrid } from './components/WeekGrid.jsx';
-import { ExamForm } from './components/ExamForm.jsx';
-import { SettingsModal } from './components/SettingsModal.jsx';
-import { CalendarExportModal } from './components/CalendarExportModal.jsx';
-import { AuthModal } from './components/AuthModal.jsx';
 import { LandingScreen } from './components/LandingScreen.jsx';
-import { GroqKeyModal } from './components/GroqKeyModal.jsx';
-import { AIPlanModal } from './components/AIPlanModal.jsx';
 import { StudyTimeline } from './components/StudyTimeline.jsx';
-import { ImageImportModal } from './components/ImageImportModal.jsx';
-import { HelpModal } from './components/HelpModal.jsx';
-import { EventDetailModal } from './components/EventDetailModal.jsx';
 import { EmailConfirmedScreen } from './components/EmailConfirmedScreen.jsx';
 import { ExamDashboard } from './components/ExamDashboard.jsx';
-import { NewSessionModal } from './components/NewSessionModal.jsx';
 import { TodayDashboard } from './components/TodayDashboard.jsx';
-import { DaySummaryModal } from './components/DaySummaryModal.jsx';
 import { ToastStack } from './components/ToastStack.jsx';
-import { OnboardingModal } from './components/OnboardingModal.jsx';
+
+const lazyNamed = (loader, name) =>
+  lazy(() => loader().then((module) => ({ default: module[name] })));
+
+const AuthModal = lazyNamed(() => import('./components/AuthModal.jsx'), 'AuthModal');
+const ExamForm = lazyNamed(() => import('./components/ExamForm.jsx'), 'ExamForm');
+const SettingsModal = lazyNamed(() => import('./components/SettingsModal.jsx'), 'SettingsModal');
+const CalendarExportModal = lazyNamed(() => import('./components/CalendarExportModal.jsx'), 'CalendarExportModal');
+const GroqKeyModal = lazyNamed(() => import('./components/GroqKeyModal.jsx'), 'GroqKeyModal');
+const AIPlanModal = lazyNamed(() => import('./components/AIPlanModal.jsx'), 'AIPlanModal');
+const ImageImportModal = lazyNamed(() => import('./components/ImageImportModal.jsx'), 'ImageImportModal');
+const HelpModal = lazyNamed(() => import('./components/HelpModal.jsx'), 'HelpModal');
+const EventDetailModal = lazyNamed(() => import('./components/EventDetailModal.jsx'), 'EventDetailModal');
+const NewSessionModal = lazyNamed(() => import('./components/NewSessionModal.jsx'), 'NewSessionModal');
+const DaySummaryModal = lazyNamed(() => import('./components/DaySummaryModal.jsx'), 'DaySummaryModal');
+const OnboardingModal = lazyNamed(() => import('./components/OnboardingModal.jsx'), 'OnboardingModal');
 
 const TWEAKS_LS_KEY = 'sessionly-tweaks';
 
@@ -63,6 +67,57 @@ function getWeekStart(date) {
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function dateKey(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function examTaskMoves(previousExam, nextExam) {
+  if (!previousExam) return [];
+  const moves = [];
+  previousExam.components?.forEach((oldComponent, componentIndex) => {
+    const newComponent = nextExam.components?.find((component) => component.name === oldComponent.name)
+      || nextExam.components?.[componentIndex];
+    if (!newComponent) return;
+    oldComponent.dates?.forEach((oldDate, dateIndex) => {
+      const newDate = oldDate.id
+        ? newComponent.dates?.find((date) => date.id === oldDate.id)
+        : newComponent.dates?.[dateIndex];
+      const oldKey = dateKey(oldDate.date);
+      const newKey = dateKey(newDate?.date);
+      if (!oldKey || !newKey) return;
+      if (oldKey === newKey && oldComponent.name === newComponent.name) return;
+      moves.push({
+        oldRef: `exam:${previousExam.id}:${oldComponent.name}:${oldKey}`,
+        newRef: `exam:${nextExam.id}:${newComponent.name}:${newKey}`,
+        oldComponent: oldComponent.name,
+        newComponent: newComponent.name,
+        oldDate: oldKey,
+        newDate: newKey,
+      });
+    });
+  });
+  return moves;
+}
+
+function applyPickMoves(picks, examId, moves) {
+  return picks.map((pick) => {
+    if (pick.examId !== examId) return pick;
+    const move = moves.find((entry) =>
+      entry.oldComponent === pick.componentName
+      && entry.oldDate === dateKey(pick.date)
+    );
+    if (!move) return pick;
+    return {
+      ...pick,
+      componentName: move.newComponent,
+      date: new Date(`${move.newDate}T00:00:00`),
+    };
+  });
 }
 
 function AppLoading() {
@@ -129,15 +184,23 @@ export default function App() {
   const [tweaks, setTweaks] = useState(loadTweaks);
   const setTweak = (key, val) => setTweaks((prev) => ({ ...prev, [key]: val }));
 
-  const [year, setYear] = useState(TODAY.getFullYear());
-  const [month, setMonth] = useState(TODAY.getMonth());
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(TODAY));
+  const [today, setToday] = useState(() => new Date());
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [month, setMonth] = useState(() => new Date().getMonth());
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
   const [view, setView] = useState(() => tweaks.defaultView || 'month');
   const [workspaceView, setWorkspaceView] = useState(() => {
-    try { return localStorage.getItem('sessionly-workspace-view') || 'today'; }
+    try {
+      const saved = localStorage.getItem('sessionly-workspace-view');
+      return ['today', 'calendar', 'exams'].includes(saved) ? saved : 'today';
+    }
     catch { return 'today'; }
   });
-  const [mobileTab, setMobileTab] = useState('today');
+  const [sidebarHidden, setSidebarHidden] = useState(() => {
+    try { return localStorage.getItem('sessionly-sidebar-hidden') === 'true'; }
+    catch { return false; }
+  });
+  const mobileTab = workspaceView;
   const [selectedId, setSelectedId] = useState(null);
   const [modal, setModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
@@ -163,6 +226,10 @@ export default function App() {
     setToasts((current) => [...current.slice(-3), { id, type, message }]);
   }, []);
 
+  const changeWorkspace = useCallback((nextView) => {
+    setWorkspaceView(nextView);
+  }, []);
+
   // Apply tweaks to <html> data-attributes and persist to localStorage
   useEffect(() => {
     const root = document.documentElement;
@@ -179,6 +246,26 @@ export default function App() {
     try { localStorage.setItem('sessionly-workspace-view', workspaceView); }
     catch { }
   }, [workspaceView]);
+
+  useEffect(() => {
+    try { localStorage.setItem('sessionly-sidebar-hidden', String(sidebarHidden)); }
+    catch { }
+  }, [sidebarHidden]);
+
+  useEffect(() => {
+    let timeout;
+    const scheduleMidnightRefresh = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(24, 0, 0, 50);
+      timeout = window.setTimeout(() => {
+        setToday(new Date());
+        scheduleMidnightRefresh();
+      }, next.getTime() - now.getTime());
+    };
+    scheduleMidnightRefresh();
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   // ── Load data from Supabase ────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -289,40 +376,47 @@ export default function App() {
 
   // ── Exam CRUD ──────────────────────────────────────────────────────────────
   const saveExam = async (draft) => {
+    const previousExams = exams;
+    const mode = modal?.mode;
     let savedExam;
-    if (modal?.mode === 'edit') {
+    if (mode === 'edit') {
       savedExam = { ...draft, id: modal.id };
       setExams((prev) => prev.map((e) => e.id === modal.id ? savedExam : e));
     } else {
       savedExam = { ...draft, id: 'ex_' + Date.now() };
-      setExams((prev) => [...prev, savedExam]);
+    setExams((prev) => [...prev, savedExam]);
     }
-    setModal(null);
-
     try {
-      await upsertExam(savedExam, user.id);
-      notify('success', modal?.mode === 'edit' ? 'Esame aggiornato.' : 'Esame aggiunto.');
+      const previousExam = mode === 'edit'
+        ? previousExams.find((exam) => exam.id === savedExam.id)
+        : null;
+      const taskMoves = examTaskMoves(previousExam, savedExam);
+      await upsertExam(savedExam, user.id, taskMoves);
+      if (taskMoves.length) {
+        setDatePicks((current) => applyPickMoves(current, savedExam.id, taskMoves));
+      }
+      setModal(null);
+      notify('success', mode === 'edit' ? 'Esame aggiornato.' : 'Esame aggiunto.');
     } catch (err) {
+      setExams(previousExams);
       notify('error', `Errore salvataggio: ${err.message}`);
+      throw err;
     }
   };
 
   const deleteExam = async (id) => {
-    setExams((prev) => prev.filter((e) => e.id !== id));
-    setStudyWindows((prev) => prev.filter((s) => s.examId !== id));
-    setDatePicks((prev) => prev.filter((p) => p.examId !== id));
-    setModal(null);
-    setSelectedId(null);
-
     try {
-      await Promise.all([
-        removeExam(id),
-        removeStudyWindowsForExam(id),
-        removeDatePicksForExam(id),
-      ]);
+      await deleteExamData(id);
+      setExams((prev) => prev.filter((e) => e.id !== id));
+      setStudyWindows((prev) => prev.filter((s) => s.examId !== id));
+      setDatePicks((prev) => prev.filter((p) => p.examId !== id));
+      setEvents((prev) => prev.filter((event) => event.exam_id !== id));
+      setModal(null);
+      setSelectedId(null);
       notify('success', 'Esame eliminato.');
     } catch (err) {
       notify('error', `Errore eliminazione: ${err.message}`);
+      throw err;
     }
   };
 
@@ -338,6 +432,7 @@ export default function App() {
 
   const handleSelectPlan = async (plan, studyPrefs) => {
     setShowAIPlanModal(false);
+    const previous = { datePicks, studyWindows, events };
 
     const picksForState = plan.date_picks.map((p) => ({
       examId: p.examId,
@@ -360,25 +455,17 @@ export default function App() {
       label: '',
     }));
 
-    setDatePicks(picksForState);
-    setStudyWindows(windows);
-    setShowAllDates(false);
-
     try {
-      // Elimina eventi pianificati precedenti, salva picks e windows in parallelo
-      await Promise.all([
-        replaceDatePicks(picksForDb),
-        replaceStudyWindows(windows),
-        deleteAllPlannedEvents(),
-      ]);
+      const eventRows = await buildStudyEvents(plan.study_windows, exams, {
+        ...studyPrefs,
+        slotAssignments: plan.slot_assignments || [],
+      }, user.id);
 
-      // Espandi le windows in eventi giornalieri con la logica slot-based
-      if (plan.study_windows.length > 0) {
-        await createStudyEvents(plan.study_windows, exams, {
-          ...studyPrefs,
-          slotAssignments: plan.slot_assignments || [],
-        });
-      }
+      setDatePicks(picksForState);
+      setStudyWindows(windows);
+      setShowAllDates(false);
+
+      await replacePlanAtomically(picksForDb, windows, eventRows);
 
       // Ricarica per avere gli ID server-assigned di windows e sessioni
       const [windowsData, picksData, eventsData] = await Promise.all([
@@ -387,22 +474,31 @@ export default function App() {
       setStudyWindows(windowsData);
       setDatePicks(picksData);
       setEvents(eventsData);
-      setWorkspaceView('today');
+      changeWorkspace('today');
       notify('success', 'Piano AI creato e aggiunto al calendario.');
     } catch (err) {
+      setDatePicks(previous.datePicks);
+      setStudyWindows(previous.studyWindows);
+      setEvents(previous.events);
       notify('error', `Errore salvataggio piano: ${err.message}`);
     }
   };
 
   const handleRemovePlan = async () => {
+    const previous = { datePicks, studyWindows, events };
     setDatePicks([]);
     setStudyWindows([]);
-    setEvents([]);
+    setEvents((current) => current.filter((event) =>
+      !(event.origin === 'ai' && event.status === 'planned')
+    ));
     setShowAllDates(false);
     try {
       await clearPlan();
       notify('success', 'Piano rimosso.');
     } catch (err) {
+      setDatePicks(previous.datePicks);
+      setStudyWindows(previous.studyWindows);
+      setEvents(previous.events);
       notify('error', `Errore rimozione piano: ${err.message}`);
     }
   };
@@ -418,6 +514,9 @@ export default function App() {
     try {
       await updateStudyWindowComplete(windowId, newCompleted);
     } catch (err) {
+      setStudyWindows((prev) =>
+        prev.map((w) => w.id === windowId ? { ...w, completed: !newCompleted } : w)
+      );
       notify('error', `Errore aggiornamento: ${err.message}`);
     }
   };
@@ -446,10 +545,21 @@ export default function App() {
     // Update state directly (bypasses modal check in saveExam)
     setExams((prev) => prev.map((e) => e.id === examId ? updatedExam : e));
     try {
-      await upsertExam(updatedExam, user.id);
+      const nextDate = patch.date
+        ? `${patch.date.getFullYear()}-${String(patch.date.getMonth() + 1).padStart(2, '0')}-${String(patch.date.getDate()).padStart(2, '0')}`
+        : oldDateISO;
+      await updateExamDateAndTasks(updatedExam, componentName, oldDateISO, nextDate);
+      setDatePicks((current) => applyPickMoves(current, examId, [{
+        oldComponent: componentName,
+        newComponent: componentName,
+        oldDate: oldDateISO,
+        newDate: nextDate,
+      }]));
       notify('success', 'Data dell’esame aggiornata.');
     } catch (err) {
+      setExams((prev) => prev.map((e) => e.id === examId ? exam : e));
       notify('error', `Errore salvataggio data: ${err.message}`);
+      throw err;
     }
   };
 
@@ -472,9 +582,15 @@ export default function App() {
     try {
       await deleteEvent(eventId);
       notify('success', 'Sessione eliminata.');
+      return true;
     } catch (err) {
-      if (removed) setEvents((es) => [...es, removed]);
+      if (removed) {
+        setEvents((es) => [...es, removed].sort(
+          (a, b) => new Date(a.start_time) - new Date(b.start_time)
+        ));
+      }
       notify('error', `Errore eliminazione sessione: ${err.message}`);
+      return false;
     }
   };
 
@@ -485,17 +601,20 @@ export default function App() {
       notify('success', `${created?.length || 0} session${created?.length === 1 ? 'e creata' : 'i create'}.`);
     } catch (err) {
       notify('error', `Errore creazione sessioni: ${err.message}`);
+      throw err;
     }
   };
 
   const handleImportExams = async (drafts) => {
     setShowImageImport(false);
     const newExams = drafts.map((d) => ({ ...d, id: 'ex_' + Date.now() + '_' + Math.random().toString(36).slice(2) }));
+    const previousExams = exams;
     setExams((prev) => [...prev, ...newExams]);
     try {
       await Promise.all(newExams.map((e) => upsertExam(e, user.id)));
       notify('success', `${newExams.length} esam${newExams.length === 1 ? 'e importato' : 'i importati'}.`);
     } catch (err) {
+      setExams(previousExams);
       notify('error', `Errore salvataggio: ${err.message}`);
     }
   };
@@ -518,15 +637,21 @@ export default function App() {
   };
 
   const goToday = () => {
-    setMonth(TODAY.getMonth());
-    setYear(TODAY.getFullYear());
+    const now = new Date();
+    setToday(now);
+    setMonth(now.getMonth());
+    setYear(now.getFullYear());
   };
 
   const navWeek = (delta) => {
     setWeekStart((ws) => new Date(ws.getTime() + delta * 7 * 86400000));
   };
 
-  const goTodayWeek = () => setWeekStart(getWeekStart(TODAY));
+  const goTodayWeek = () => {
+    const now = new Date();
+    setToday(now);
+    setWeekStart(getWeekStart(now));
+  };
 
   const openEdit = (id) => {
     setSelectedId(id);
@@ -541,7 +666,9 @@ export default function App() {
     return (
       <>
         <LandingScreen onOpenAuth={() => setShowAuthModal(true)} />
-        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+        <Suspense fallback={null}>
+          {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+        </Suspense>
       </>
     );
   }
@@ -563,13 +690,26 @@ export default function App() {
   const hasPlan = datePicks.length > 0;
 
   return (
-    <div className={`app${workspaceView !== 'calendar' ? ' dash-mode' : ''}`} data-mobile-tab={mobileTab}>
+    <div className={`app${sidebarHidden ? ' sidebar-collapsed' : ''}`} data-mobile-tab={mobileTab}>
       <a className="skip-link" href="#main-content">Vai al contenuto principale</a>
+      {sidebarHidden && (
+        <button
+          className="sidebar-reveal-button"
+          onClick={() => setSidebarHidden(false)}
+          title="Mostra barra laterale"
+          aria-label="Mostra barra laterale"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16M11 9l3 3-3 3" />
+          </svg>
+        </button>
+      )}
       <Sidebar
         exams={exams}
         studyWindows={studyWindows}
         datePicks={datePicks}
-        today={TODAY}
+        today={today}
         selectedId={selectedId}
         onSelect={openEdit}
         onAdd={() => setModal({ mode: 'new' })}
@@ -577,6 +717,7 @@ export default function App() {
         onHelp={() => setHelpMode('guide')}
         user={user}
         onOpenSettings={() => setShowSettings(true)}
+        onCollapse={() => setSidebarHidden(true)}
       />
 
       <main className="main" id="main-content">
@@ -596,13 +737,13 @@ export default function App() {
           onToggleAllDates={() => setShowAllDates((v) => !v)}
           onExport={() => setShowExport(true)}
           workspaceView={workspaceView}
-          onWorkspaceView={setWorkspaceView}
+          onWorkspaceView={changeWorkspace}
           onNewExam={() => setModal({ mode: 'new' })}
           onNewSession={() => setShowNewSession(true)}
         />
 
         {tweaks.showTimeline && workspaceView === 'calendar' && (
-          <StudyTimeline exams={exams} datePicks={datePicks} today={TODAY} />
+          <StudyTimeline exams={exams} datePicks={datePicks} today={today} />
         )}
 
         {exams.length === 0 ? (
@@ -612,18 +753,18 @@ export default function App() {
             exams={exams}
             events={events}
             datePicks={datePicks}
-            today={TODAY}
+            today={today}
             onOpenSession={handleOpenEventDetail}
             onNewSession={() => setShowNewSession(true)}
             onOpenExam={openEdit}
-            onOpenCalendar={() => setWorkspaceView('calendar')}
+            onOpenCalendar={() => changeWorkspace('calendar')}
           />
         ) : workspaceView === 'exams' ? (
           <ExamDashboard
             exams={exams}
             events={events}
             datePicks={datePicks}
-            today={TODAY}
+            today={today}
             onSelectExam={openEdit}
           />
         ) : view === 'week' ? (
@@ -633,7 +774,7 @@ export default function App() {
             events={events}
             datePicks={datePicks}
             showAllDates={showAllDates}
-            today={TODAY}
+            today={today}
             studyStyle={tweaks.studyStyle}
             onSelectExam={openEdit}
             onToggleStudyComplete={handleToggleStudyComplete}
@@ -649,7 +790,7 @@ export default function App() {
             events={events}
             datePicks={datePicks}
             showAllDates={showAllDates}
-            today={TODAY}
+            today={today}
             studyStyle={tweaks.studyStyle}
             onSelectExam={openEdit}
             onToggleStudyComplete={handleToggleStudyComplete}
@@ -660,117 +801,130 @@ export default function App() {
         )}
       </main>
 
-      {modal && (
-        <ExamForm
-          initial={initial}
-          sliderStyle={tweaks.sliderStyle}
-          today={TODAY}
-          onClose={() => setModal(null)}
-          onSave={saveExam}
-          onDelete={deleteExam}
-          onNoGroqKey={() => { setGroqKeyAfterSave(null); setShowGroqKeyModal(true); }}
-        />
-      )}
+      <Suspense fallback={null}>
+        {modal && (
+          <ExamForm
+            initial={initial}
+            allExams={exams}
+            sliderStyle={tweaks.sliderStyle}
+            today={today}
+            onClose={() => setModal(null)}
+            onSave={saveExam}
+            onDelete={deleteExam}
+            onNoGroqKey={() => { setGroqKeyAfterSave(null); setShowGroqKeyModal(true); }}
+          />
+        )}
 
-      {showExport && (
-        <CalendarExportModal
-          exams={exams}
-          datePicks={datePicks}
-          onClose={() => setShowExport(false)}
-        />
-      )}
+        {showExport && (
+          <CalendarExportModal
+            exams={exams}
+            datePicks={datePicks}
+            showAllDates={showAllDates}
+            studyEvents={events}
+            onClose={() => setShowExport(false)}
+          />
+        )}
 
-      {showGroqKeyModal && (
-        <GroqKeyModal
-          onClose={() => setShowGroqKeyModal(false)}
-          onSaved={handleGroqKeySaved}
-        />
-      )}
+        {showGroqKeyModal && (
+          <GroqKeyModal
+            onClose={() => setShowGroqKeyModal(false)}
+            onSaved={handleGroqKeySaved}
+          />
+        )}
 
-      {showAIPlanModal && (
-        <AIPlanModal
-          exams={exams}
-          hasPlan={hasPlan}
-          onSelectPlan={handleSelectPlan}
-          onNoGroqKey={() => {
-            setShowAIPlanModal(false);
-            setGroqKeyAfterSave('plan');
-            setShowGroqKeyModal(true);
-          }}
-          onClose={() => setShowAIPlanModal(false)}
-        />
-      )}
+        {showAIPlanModal && (
+          <AIPlanModal
+            exams={exams}
+            hasPlan={hasPlan}
+            onSelectPlan={handleSelectPlan}
+            onNoGroqKey={() => {
+              setShowAIPlanModal(false);
+              setGroqKeyAfterSave('plan');
+              setShowGroqKeyModal(true);
+            }}
+            onClose={() => setShowAIPlanModal(false)}
+          />
+        )}
 
-      {showImageImport && (
-        <ImageImportModal
-          onImport={handleImportExams}
-          onNoGroqKey={() => { setShowImageImport(false); setGroqKeyAfterSave(null); setShowGroqKeyModal(true); }}
-          onClose={() => setShowImageImport(false)}
-        />
-      )}
+        {showImageImport && (
+          <ImageImportModal
+            onImport={handleImportExams}
+            onNoGroqKey={() => { setShowImageImport(false); setGroqKeyAfterSave(null); setShowGroqKeyModal(true); }}
+            onClose={() => setShowImageImport(false)}
+          />
+        )}
 
-      {helpMode === 'onboarding' && (
-        <OnboardingModal
-          onComplete={completeFirstRun}
-          onOpenGuide={() => {
-            completeFirstRun();
-            setHelpMode('guide');
-          }}
-        />
-      )}
+        {helpMode === 'onboarding' && (
+          <OnboardingModal
+            onComplete={completeFirstRun}
+            onOpenGuide={() => {
+              completeFirstRun();
+              setHelpMode('guide');
+            }}
+          />
+        )}
 
-      {helpMode === 'guide' && <HelpModal onClose={closeHelp} />}
+        {helpMode === 'guide' && <HelpModal onClose={closeHelp} />}
 
-      {daySummary && (
-        <DaySummaryModal
-          summary={daySummary}
-          onOpenEvent={(detail) => {
-            setDaySummary(null);
-            handleOpenEventDetail(detail);
-          }}
-          onClose={() => setDaySummary(null)}
-        />
-      )}
+        {daySummary && (
+          <DaySummaryModal
+            summary={daySummary}
+            onOpenEvent={(detail) => {
+              setDaySummary(null);
+              handleOpenEventDetail(detail);
+            }}
+            onClose={() => setDaySummary(null)}
+          />
+        )}
 
-      {eventDetail && (
-        <EventDetailModal
-          detail={eventDetail}
-          onSaveExamDate={handleSaveExamDate}
-          onUpdateSession={handleUpdateSession}
-          onDeleteSession={handleDeleteSession}
-          onOpenFullEditor={(examId) => {
-            setEventDetail(null);
-            openEdit(examId);
-          }}
-          onClose={() => setEventDetail(null)}
-        />
-      )}
+        {eventDetail && (
+          <EventDetailModal
+            detail={eventDetail}
+            onSaveExamDate={handleSaveExamDate}
+            onUpdateSession={handleUpdateSession}
+            onDeleteSession={handleDeleteSession}
+            onOpenFullEditor={(examId) => {
+              setEventDetail(null);
+              openEdit(examId);
+            }}
+            onClose={() => setEventDetail(null)}
+          />
+        )}
 
-      {showNewSession && (
-        <NewSessionModal
-          exams={exams}
-          today={TODAY}
-          onCreate={handleCreateSessions}
-          onClose={() => setShowNewSession(false)}
-        />
-      )}
+        {showNewSession && (
+          <NewSessionModal
+            exams={exams}
+            today={today}
+            onCreate={handleCreateSessions}
+            onClose={() => setShowNewSession(false)}
+          />
+        )}
 
-      {showSettings && (
-        <SettingsModal
-          tweaks={tweaks}
-          onTweak={(key, value) => {
-            setTweak(key, value);
-            if (key === 'defaultView') setView(value);
-          }}
-          onGroqKey={() => {
-            setShowSettings(false);
-            setShowGroqKeyModal(true);
-          }}
-          user={user}
-          onLogout={handleLogout}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
+        {showSettings && (
+          <SettingsModal
+            tweaks={tweaks}
+            onTweak={(key, value) => {
+              setTweak(key, value);
+              if (key === 'defaultView') setView(value);
+            }}
+            onGroqKey={() => {
+              setShowSettings(false);
+              setShowGroqKeyModal(true);
+            }}
+            onImport={() => {
+              setShowSettings(false);
+              setShowImageImport(true);
+            }}
+            onHelp={() => {
+              setShowSettings(false);
+              setHelpMode('guide');
+            }}
+            user={user}
+            onLogout={handleLogout}
+            onClose={() => setShowSettings(false)}
+          />
+        )}
+      </Suspense>
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
@@ -778,8 +932,7 @@ export default function App() {
         <button
           className={`mobile-tab ${mobileTab === 'today' ? 'active' : ''}`}
           onClick={() => {
-            setMobileTab('today');
-            setWorkspaceView('today');
+            changeWorkspace('today');
           }}
           aria-label="Oggi"
         >
@@ -792,8 +945,7 @@ export default function App() {
         <button
           className={`mobile-tab ${mobileTab === 'calendar' ? 'active' : ''}`}
           onClick={() => {
-            setMobileTab('calendar');
-            setWorkspaceView('calendar');
+            changeWorkspace('calendar');
           }}
           aria-label="Calendario"
         >
@@ -806,10 +958,9 @@ export default function App() {
           <span>Calendario</span>
         </button>
         <button
-          className={`mobile-tab ${mobileTab === 'list' ? 'active' : ''}`}
+          className={`mobile-tab ${mobileTab === 'exams' ? 'active' : ''}`}
           onClick={() => {
-            setMobileTab('list');
-            setWorkspaceView('exams');
+            changeWorkspace('exams');
           }}
           aria-label="Esami"
         >
@@ -822,6 +973,17 @@ export default function App() {
             <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
           </svg>
           <span>Esami</span>
+        </button>
+        <button
+          className="mobile-tab"
+          onClick={() => setShowSettings(true)}
+          aria-label="Account e impostazioni"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="8" r="3" />
+            <path d="M5 20c.8-4 3.1-6 7-6s6.2 2 7 6" />
+          </svg>
+          <span>Account</span>
         </button>
       </nav>
     </div>

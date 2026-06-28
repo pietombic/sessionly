@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialog } from '../hooks/useDialog.js';
 
 function fmtDateISO(d) {
   const date = d instanceof Date ? d : new Date(d);
@@ -14,7 +15,9 @@ const DAYS = [
 ];
 
 export function NewSessionModal({ exams, today, onCreate, onClose }) {
+  const dialogRef = useDialog(onClose);
   const studyable = exams.filter((e) => !['done', 'failed', 'saltato'].includes(e.status));
+  const todayStr = fmtDateISO(today);
 
   const [examId, setExamId] = useState(studyable[0]?.id || '');
   const [startStr, setStartStr] = useState(fmtDateISO(today));
@@ -24,20 +27,28 @@ export function NewSessionModal({ exams, today, onCreate, onClose }) {
   const [sessionMinutes, setSessionMinutes] = useState(120);
   const [breakMinutes, setBreakMinutes] = useState(15);
   const [studyDays, setStudyDays] = useState([1, 2, 3, 4, 5]);
+  const [title, setTitle] = useState('');
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const toggleDay = (d) =>
     setStudyDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]);
 
-  const valid = examId && startStr && endStr && startStr <= endStr
+  const valid = examId && startStr && endStr && startStr >= todayStr && startStr <= endStr
     && startTime < endTime && studyDays.length > 0;
 
   const submit = async () => {
     if (!valid) return;
     setSaving(true);
     try {
-      await onCreate({ examId, startStr, endStr, startTime, endTime, sessionMinutes, breakMinutes, studyDays });
+      await onCreate({
+        examId, startStr, endStr, startTime, endTime,
+        sessionMinutes, breakMinutes, studyDays, title, notes,
+      });
       onClose();
+    } catch (err) {
+      setError(err.message || 'Impossibile creare le sessioni.');
     } finally {
       setSaving(false);
     }
@@ -47,13 +58,13 @@ export function NewSessionModal({ exams, today, onCreate, onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={closeOnBackdrop}>
-      <div className="modal modal--compact">
+      <div ref={dialogRef} className="modal modal--compact" role="dialog" aria-modal="true" aria-labelledby="new-session-title">
         <div className="modal-hd">
           <div>
-            <h2 style={{ margin: 0 }}>Nuova sessione</h2>
+            <h2 id="new-session-title" style={{ margin: 0 }}>Nuova sessione</h2>
             <div className="sub" style={{ marginTop: 2 }}>Genera sessioni indipendenti nell'intervallo di preparazione</div>
           </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="Chiudi">✕</button>
         </div>
 
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -71,11 +82,11 @@ export function NewSessionModal({ exams, today, onCreate, onClose }) {
               <div style={{ display: 'flex', gap: 10 }}>
                 <div className="field" style={{ flex: 1 }}>
                   <label className="field-label">Inizio prep.</label>
-                  <input className="input" type="date" value={startStr} onChange={(e) => setStartStr(e.target.value)} />
+                  <input className="input" type="date" min={todayStr} value={startStr} onChange={(e) => setStartStr(e.target.value)} />
                 </div>
                 <div className="field" style={{ flex: 1 }}>
                   <label className="field-label">Fine prep.</label>
-                  <input className="input" type="date" value={endStr} onChange={(e) => setEndStr(e.target.value)} />
+                  <input className="input" type="date" min={startStr || todayStr} value={endStr} onChange={(e) => setEndStr(e.target.value)} />
                 </div>
               </div>
 
@@ -88,6 +99,27 @@ export function NewSessionModal({ exams, today, onCreate, onClose }) {
                   <label className="field-label">Alle</label>
                   <input className="input" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
                 </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label">Titolo personalizzato <span aria-hidden="true">·</span> opzionale</label>
+                <input
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="es. Ripasso simulazione"
+                />
+              </div>
+
+              <div className="field">
+                <label className="field-label">Note <span aria-hidden="true">·</span> opzionali</label>
+                <textarea
+                  className="input"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Obiettivo generale delle sessioni…"
+                  rows={2}
+                />
               </div>
 
               <div className="field">
@@ -124,6 +156,7 @@ export function NewSessionModal({ exams, today, onCreate, onClose }) {
                   Controlla intervallo date, orari e almeno un giorno selezionato.
                 </div>
               )}
+              {error && <div className="ai-error" role="alert">{error}</div>}
             </>
           )}
         </div>

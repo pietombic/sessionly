@@ -62,6 +62,7 @@ function buildWeekBuckets(cells, exams, sessions, datePicks, showAllDates) {
     buckets.get(key).studies.push({
       id: s.id,
       exam,
+      title: s.title || exam.name,
       label: s.notes || '',
       notes: s.notes || '',
       completed: s.status === 'completed',
@@ -97,6 +98,7 @@ function assignColumns(items) {
 export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAllDates = false, today, studyStyle, onSelectExam, onToggleStudyComplete, onRemoveStudyWindow, onOpenEventDetail, onMoveSession }) {
   const gridBodyRef = useRef(null);
   const dragRef = useRef(null);
+  const dragPreviewRef = useRef({});
   const suppressClickRef = useRef(false);
   const [dragPreview, setDragPreview] = useState({});
 
@@ -133,23 +135,24 @@ export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAl
       }
 
       suppressClickRef.current = Math.abs(deltaMinutes) >= 15;
-      setDragPreview((current) => ({
-        ...current,
+      const nextPreview = {
+        ...dragPreviewRef.current,
         [drag.id]: { startHour: startMinutes / 60, endHour: endMinutes / 60 },
-      }));
+      };
+      dragPreviewRef.current = nextPreview;
+      setDragPreview(nextPreview);
     };
 
     const handlePointerUp = () => {
       const drag = dragRef.current;
       if (!drag) return;
-      const preview = dragPreview[drag.id];
+      const preview = dragPreviewRef.current[drag.id];
       dragRef.current = null;
       if (!preview || !suppressClickRef.current) {
-        setDragPreview((current) => {
-          const next = { ...current };
-          delete next[drag.id];
-          return next;
-        });
+        const next = { ...dragPreviewRef.current };
+        delete next[drag.id];
+        dragPreviewRef.current = next;
+        setDragPreview(next);
         return;
       }
 
@@ -159,15 +162,14 @@ export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAl
       const endMinutes = Math.round(preview.endHour * 60);
       start.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
       end.setHours(Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
-      onMoveSession?.(drag.id, {
+      Promise.resolve(onMoveSession?.(drag.id, {
         start_time: start.toISOString(),
         end_time: end.toISOString(),
-      });
-      setDragPreview((current) => {
-        const next = { ...current };
-        delete next[drag.id];
-        return next;
-      });
+      })).catch(() => {});
+      const next = { ...dragPreviewRef.current };
+      delete next[drag.id];
+      dragPreviewRef.current = next;
+      setDragPreview(next);
       window.setTimeout(() => { suppressClickRef.current = false; }, 0);
     };
 
@@ -179,7 +181,7 @@ export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAl
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [dragPreview, onMoveSession]);
+  }, [onMoveSession]);
 
   const startDrag = (event, session, mode) => {
     if (isMobile || event.button !== 0) return;
@@ -197,10 +199,12 @@ export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAl
       endISO: session.endISO,
     };
     suppressClickRef.current = false;
-    setDragPreview((current) => ({
-      ...current,
+    const nextPreview = {
+      ...dragPreviewRef.current,
       [session.id]: { startHour: session.startHour, endHour: session.endHour },
-    }));
+    };
+    dragPreviewRef.current = nextPreview;
+    setDragPreview(nextPreview);
   };
 
   const cells = useMemo(() =>
@@ -250,7 +254,8 @@ export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAl
 
   const showStudy = (e, st) => show(e, (
     <>
-      <h4>Studio · {st.exam.name}</h4>
+      <h4>{st.title}</h4>
+      {st.title !== st.exam.name && <div className="ttline"><span className="l">Esame</span><span>{st.exam.name}</span></div>}
       {st.startTime && st.endTime && (
         <div className="ttline"><span className="l">Orario</span><span>{st.startTime} – {st.endTime}</span></div>
       )}
@@ -447,6 +452,7 @@ export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAl
                             type: 'session',
                             eventId: st.id,
                             examName: st.exam.name,
+                            title: st.title,
                             label: st.label || '',
                             notes: st.notes || '',
                             completed: st.completed,
@@ -466,7 +472,7 @@ export function WeekGrid({ weekStart, exams, events = [], datePicks = [], showAl
                         {st.startTime && st.endTime && ` · ${st.startTime}–${st.endTime}`}
                       </span>
                       <span className="tg-event-name" style={{ textDecoration: st.completed ? 'line-through' : 'none' }}>
-                        {st.exam.name}
+                        {st.title}
                       </span>
                       {st.label && <span className="tg-event-time">{st.label}</span>}
                       <button

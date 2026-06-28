@@ -82,19 +82,18 @@ export async function fetchExams() {
   return data.map((row) => ({ id: row.id, ...reviveExam(row.data) }));
 }
 
-export async function upsertExam(exam, userId) {
+export async function upsertExam(exam, _userId, taskMoves = []) {
   const { id, ...rest } = exam;
-  const { error } = await supabase
-    .from('exams')
-    .upsert(
-      { id, user_id: userId, data: serializeExam(rest), updated_at: new Date().toISOString() },
-      { onConflict: 'id' }
-    );
+  const { error } = await supabase.rpc('save_exam', {
+    p_exam_id: id,
+    p_exam_data: serializeExam(rest),
+    p_task_moves: taskMoves,
+  });
   if (error) throw error;
 }
 
-export async function removeExam(examId) {
-  const { error } = await supabase.from('exams').delete().eq('id', examId);
+export async function deleteExamData(examId) {
+  const { error } = await supabase.rpc('delete_exam_data', { p_exam_id: examId });
   if (error) throw error;
 }
 
@@ -107,39 +106,6 @@ export async function fetchStudyWindows() {
     .order('start_date', { ascending: true });
   if (error) throw error;
   return reviveWindows(data);
-}
-
-export async function replaceStudyWindows(windows) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Non autenticato');
-
-  await supabase.from('study_windows').delete().eq('user_id', user.id);
-
-  if (windows.length === 0) return;
-
-  const rows = windows.map((w) => ({
-    user_id: user.id,
-    exam_id: w.examId,
-    start_date: fmtDate(w.start),
-    end_date: fmtDate(w.end),
-    label: w.startTime && w.endTime
-      ? `${w.startTime}-${w.endTime}|${w.label}`
-      : w.label,
-    completed: false,
-  }));
-
-  const { error } = await supabase.from('study_windows').insert(rows);
-  if (error) throw error;
-}
-
-export async function removeStudyWindowsForExam(examId) {
-  const { error } = await supabase.from('study_windows').delete().eq('exam_id', examId);
-  if (error) throw error;
-}
-
-export async function removeStudyWindow(windowId) {
-  const { error } = await supabase.from('study_windows').delete().eq('id', windowId);
-  if (error) throw error;
 }
 
 export async function updateStudyWindowComplete(windowId, completed) {
@@ -164,39 +130,9 @@ export async function fetchDatePicks() {
   }));
 }
 
-export async function replaceDatePicks(picks) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Non autenticato');
-
-  await supabase.from('exam_date_picks').delete().eq('user_id', user.id);
-
-  if (picks.length === 0) return;
-
-  const rows = picks.map((p) => ({
-    user_id: user.id,
-    exam_id: p.examId,
-    component_name: p.componentName,
-    pick_date: p.date,
-  }));
-
-  const { error } = await supabase.from('exam_date_picks').insert(rows);
-  if (error) throw error;
-}
-
-export async function removeDatePicksForExam(examId) {
-  const { error } = await supabase.from('exam_date_picks').delete().eq('exam_id', examId);
-  if (error) throw error;
-}
-
 export async function clearPlan() {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Non autenticato');
-
-  await Promise.all([
-    supabase.from('exam_date_picks').delete().eq('user_id', user.id),
-    supabase.from('study_windows').delete().eq('user_id', user.id),
-    supabase.from('events').delete().eq('user_id', user.id).eq('status', 'planned'),
-  ]);
+  const { error } = await supabase.rpc('clear_ai_plan');
+  if (error) throw error;
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────
@@ -250,28 +186,59 @@ function minToTime(total) {
 // studyWindows: formato grezzo Groq { examId, start:"YYYY-MM-DD", end:"YYYY-MM-DD", ... }
 // exams: array di esami (per risolvere nomi e scadenze)
 // studyPrefs: { studySlots?, studyDays?, morning?, afternoon?, evening? }
-export async function createStudyEvents(studyWindows, exams, studyPrefs) {
-  if (!studyWindows.length) return;
+export async function buildStudyEvents(studyWindows, exams, studyPrefs, providedUserId = null) {
+  if (!studyWindows.length) return [];
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Non autenticato');
+  let userId = providedUserId;
+  if (!userId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    userId = user?.id;
+  }
+  if (!userId) throw new Error('Non autenticato');
 
   const slots      = buildSlots(studyPrefs);
   const studyDays  = studyPrefs?.studyDays ?? null; // null = tutti i giorni
   const examById   = new Map(exams.map((e) => [e.id, e]));
   const todayStr   = fmtDate(new Date());
+  const deadlineByExam = new Map(
+    studyWindows
+      .filter((window) => window.deadline)
+      .map((window) => [
+        window.examId,
+        new Date(`${window.deadline}T00:00:00`).getTime(),
+      ])
+  );
 
   // Scadenza dell'esame = data più vicina tra tutte le componenti
   function examDeadline(examId) {
+    if (deadlineByExam.has(examId)) return deadlineByExam.get(examId);
     const exam = examById.get(examId);
     if (!exam) return Infinity;
     const times = exam.components
-      .flatMap((c) => c.dates.map((d) => d.date))
-      .filter(Boolean)
+      .flatMap((component) => component.dates
+        .filter((date) => date.date && date.preference !== 'excluded')
+        .map((date) => date.date)
+      )
+      .filter((date) => {
+        const value = date instanceof Date ? date : new Date(`${date}T00:00:00`);
+        return value >= new Date(`${todayStr}T00:00:00`);
+      })
       .map((d) => (d instanceof Date ? d.getTime() : new Date(d + 'T00:00:00').getTime()));
     return times.length ? Math.min(...times) : Infinity;
   }
-  const examEffort = (examId) => examById.get(examId)?.effort ?? 5;
+  const examEffort = (examId) => {
+    const exam = examById.get(examId);
+    const remainingHours = Number(exam?.remainingHours || 0);
+    if (remainingHours > 0) return Math.min(10, Math.max(1, remainingHours / 10));
+    return exam?.effort ?? 5;
+  };
+
+  const slotPeriod = (start) => {
+    const hour = Number(start.split(':')[0]);
+    if (hour < 12) return 'morning';
+    if (hour < 18) return 'afternoon';
+    return 'evening';
+  };
 
   // Normalizza le date delle windows a stringhe YYYY-MM-DD
   const wins = studyWindows.map((w) => ({
@@ -284,7 +251,7 @@ export async function createStudyEvents(studyWindows, exams, studyPrefs) {
   let globalStart = wins.reduce((m, w) => (w.startStr < m ? w.startStr : m), wins[0].startStr);
   const globalEnd = wins.reduce((m, w) => (w.endStr   > m ? w.endStr   : m), wins[0].endStr);
   if (globalStart < todayStr) globalStart = todayStr;
-  if (globalEnd < todayStr) return; // tutto il piano è nel passato
+  if (globalEnd < todayStr) return []; // tutto il piano è nel passato
   const allDays = daysInRange(globalStart, globalEnd);
 
   const rows = [];
@@ -309,14 +276,18 @@ export async function createStudyEvents(studyWindows, exams, studyPrefs) {
     // Una sessione per ogni fascia abilitata. Se le fasce sono più degli esami,
     // i blocchi extra vanno all'esame più urgente/difficile.
     const manualAssignments = studyPrefs?.slotAssignments || studyPrefs?.slot_assignments || [];
-    const allocation = slots.map((_, index) => {
+    const allocation = slots.map((slot, index) => {
       const assignedExamId = manualAssignments[index];
       const manuallyAssigned = active.find((window) => window.examId === assignedExamId);
       if (manuallyAssigned) return manuallyAssigned;
-      if (active.length === 1) return active[0];
-      if (slots.length <= active.length) return active[index];
-      const extra = slots.length - active.length;
-      return index <= extra ? active[0] : active[index - extra];
+      const period = slotPeriod(slot.start);
+      const preferred = active.filter((window) => {
+        const preference = examById.get(window.examId)?.preferredTime || 'any';
+        return preference === 'any' || preference === period;
+      });
+      const pool = preferred.length ? preferred : active;
+      if (pool.length === 1) return pool[0];
+      return pool[index % pool.length];
     });
 
     slots.forEach((slot, bi) => {
@@ -333,7 +304,7 @@ export async function createStudyEvents(studyWindows, exams, studyPrefs) {
       const studyEnd   = new Date(`${day}T${minToTime(endMin)}:00`);
 
       rows.push({
-        user_id:    user.id,
+        user_id:    userId,
         exam_id:    w.examId,
         type:       'study',
         title:      exam?.name ?? 'Studio',
@@ -341,13 +312,12 @@ export async function createStudyEvents(studyWindows, exams, studyPrefs) {
         end_time:   studyEnd.toISOString(),
         status:     'planned',
         notes:      null,
+        origin:     'ai',
       });
     });
   }
 
-  if (!rows.length) return;
-  const { error } = await supabase.from('events').insert(rows);
-  if (error) throw error;
+  return rows;
 }
 
 // Ritorna tutte le sessioni di studio dell'utente (una riga per sessione).
@@ -355,7 +325,7 @@ export async function createStudyEvents(studyWindows, exams, studyPrefs) {
 export async function fetchEvents() {
   const { data, error } = await supabase
     .from('events')
-    .select('id, exam_id, type, title, start_time, end_time, status, notes')
+    .select('id, exam_id, type, title, start_time, end_time, status, notes, origin')
     .eq('type', 'study')
     .order('start_time', { ascending: true });
   if (error) throw error;
@@ -393,7 +363,7 @@ export async function createManualSessions({
         user_id: user.id, exam_id: examId, type: 'study',
         title: title || null,
         start_time: s.toISOString(), end_time: e.toISOString(),
-        status: 'planned', notes: notes || null,
+        status: 'planned', notes: notes || null, origin: 'manual',
       });
       cur += sessionMinutes + breakMinutes;
       made++;
@@ -406,7 +376,7 @@ export async function createManualSessions({
         user_id: user.id, exam_id: examId, type: 'study',
         title: title || null,
         start_time: s.toISOString(), end_time: e.toISOString(),
-        status: 'planned', notes: notes || null,
+        status: 'planned', notes: notes || null, origin: 'manual',
       });
     }
   }
@@ -430,17 +400,30 @@ export async function updateEvent(eventId, patch) {
   if (error) throw error;
 }
 
-// Elimina tutti gli eventi 'planned' dell'utente (chiamata quando il piano cambia).
-// Non tocca eventi già 'completed' o 'skipped'.
-export async function deleteAllPlannedEvents() {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Non autenticato');
+export async function replacePlanAtomically(picks, windows, eventRows) {
+  const windowPayload = windows.map((window) => ({
+    examId: window.examId,
+    start: fmtDate(window.start),
+    end: fmtDate(window.end),
+    label: window.startTime && window.endTime
+      ? `${window.startTime}-${window.endTime}|${window.label || ''}`
+      : (window.label || ''),
+  }));
+  const eventPayload = eventRows.map((event) => ({
+    exam_id: event.exam_id,
+    type: event.type,
+    title: event.title,
+    start_time: event.start_time,
+    end_time: event.end_time,
+    status: event.status,
+    notes: event.notes,
+  }));
 
-  const { error } = await supabase
-    .from('events')
-    .delete()
-    .eq('user_id', user.id)
-    .eq('status', 'planned');
+  const { error } = await supabase.rpc('replace_ai_plan', {
+    p_picks: picks,
+    p_windows: windowPayload,
+    p_events: eventPayload,
+  });
   if (error) throw error;
 }
 
@@ -450,30 +433,6 @@ export async function deleteEvent(eventId) {
     .from('events')
     .delete()
     .eq('id', eventId);
-  if (error) throw error;
-}
-
-// Marca SOLO quell'evento come completato — nessun altro viene toccato.
-export async function markEventCompleted(eventId) {
-  const { error } = await supabase
-    .from('events')
-    .update({ status: 'completed' })
-    .eq('id', eventId);
-  if (error) throw error;
-}
-
-// ── Study window update ──────────────────────────────────────────────────────
-
-export async function updateStudyWindow(windowId, patch) {
-  const updates = {};
-  if (patch.notes !== undefined) updates.notes = patch.notes;
-  if (patch.label !== undefined) updates.label = patch.label;
-  if (patch.completed !== undefined) updates.completed = patch.completed;
-
-  const { error } = await supabase
-    .from('study_windows')
-    .update(updates)
-    .eq('id', windowId);
   if (error) throw error;
 }
 
@@ -564,19 +523,21 @@ export async function deleteEventTask(taskId) {
   if (error) throw error;
 }
 
-// Ritorna tutti gli eventi di un utente per una data specifica, ordinati per start_time.
-export async function getEventsByDay(userId, date) {
-  const d = fmtDate(date instanceof Date ? date : new Date(date));
-  const dayStart = new Date(d + 'T00:00:00').toISOString();
-  const dayEnd   = new Date(d + 'T23:59:59.999').toISOString();
-
-  const { data, error } = await supabase
-    .from('events')
-    .select('*')
-    .eq('user_id', userId)
-    .gte('start_time', dayStart)
-    .lte('start_time', dayEnd)
-    .order('start_time', { ascending: true });
+export async function updateExamDateAndTasks(exam, componentName, oldDate, newDate) {
+  const { id, ...data } = exam;
+  const oldRef = `exam:${id}:${componentName}:${oldDate}`;
+  const newRef = `exam:${id}:${componentName}:${newDate}`;
+  const { error } = await supabase.rpc('save_exam', {
+    p_exam_id: id,
+    p_exam_data: serializeExam(data),
+    p_task_moves: [{
+      oldRef,
+      newRef,
+      oldComponent: componentName,
+      newComponent: componentName,
+      oldDate,
+      newDate,
+    }],
+  });
   if (error) throw error;
-  return data;
 }

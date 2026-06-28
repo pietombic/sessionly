@@ -1,7 +1,79 @@
+:root {
+  --line: var(--rule);
+}
+
 .sidebar-discovery {
   padding: 0 12px 12px;
   display: grid;
   gap: 8px;
+}
+
+.sidebar-hd-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sidebar-collapse-button,
+.sidebar-reveal-button {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--paper) 62%, transparent);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    color .16s ease,
+    border-color .16s ease,
+    background .16s ease,
+    transform .16s ease;
+}
+
+.sidebar-collapse-button {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+}
+
+.sidebar-collapse-button:hover,
+.sidebar-reveal-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--rule));
+  background: var(--paper-2);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.sidebar-reveal-button {
+  position: fixed;
+  top: 19px;
+  left: 16px;
+  z-index: 80;
+  width: 38px;
+  height: 38px;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+@media (min-width: 769px) {
+  .app {
+    transition: grid-template-columns .22s ease;
+  }
+
+  .app.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app.sidebar-collapsed > .sidebar {
+    display: none;
+  }
+
+  .app.sidebar-collapsed .main-hd-top {
+    padding-left: max(68px, 2.6vw);
+  }
 }
 
 .sidebar-search {
@@ -281,6 +353,19 @@
   cursor: pointer;
 }
 
+.plan-warning-list {
+  margin-top: 10px;
+  padding: 9px 10px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, #c39b57 38%, var(--rule));
+  border-radius: 9px;
+  background: color-mix(in srgb, #c39b57 8%, transparent);
+  color: var(--ink-soft);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .onboarding-modal {
   width: min(620px, calc(100vw - 28px));
   overflow: hidden;
@@ -369,7 +454,12 @@
   gap: 7px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
+  .sidebar-collapse-button,
+  .sidebar-reveal-button {
+    display: none;
+  }
+
   .onboarding-actions {
     align-items: stretch;
     flex-direction: column-reverse;

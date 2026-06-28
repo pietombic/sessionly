@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase.js';
+import { useDialog } from '../hooks/useDialog.js';
 
 const BASE = import.meta.env.DEV ? window.location.origin : window.location.origin;
 
@@ -18,6 +19,7 @@ function OAuthButton({ provider, label, icon, onClick, loading }) {
 }
 
 export function AuthModal({ onClose }) {
+  const dialogRef = useDialog(onClose);
   const [tab, setTab] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -68,10 +70,10 @@ export function AuthModal({ onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal auth-modal" onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal auth-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
         <div className="modal-hd">
           <div>
-            <h2 style={{ fontFamily: 'var(--serif)' }}>
+            <h2 id="auth-modal-title" style={{ fontFamily: 'var(--serif)' }}>
               Sessionly
             </h2>
             <div className="sub">Il tuo piano di studio universitario.</div>

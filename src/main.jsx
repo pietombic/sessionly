@@ -6,6 +6,7 @@ import './styles/dashboard.css';
 import './styles/interactions.css';
 import './styles/notifications.css';
 import './styles/accessibility.css';
+import './styles/exam-form.css';
 import App from './App.jsx';
 
 inject();
