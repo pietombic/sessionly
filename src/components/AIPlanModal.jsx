@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { generateSessionPlan } from '../utils/groq.js';
 import { useDialog } from '../hooks/useDialog.js';
+import { componentNeedsPlanning } from '../utils/examStructure.js';
 
 const MONTHS_SHORT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
@@ -156,7 +157,7 @@ export function AIPlanModal({ exams, hasPlan, onSelectPlan, onNoGroqKey, onClose
   const todayISO = fmtISO(new Date());
   const examsWithDates = exams.filter((e) =>
     !['done', 'failed', 'saltato'].includes(e.status)
-    && e.components.some((c) => c.dates.some((d) =>
+    && e.components.filter(componentNeedsPlanning).some((c) => c.dates.some((d) =>
       d.date && d.preference !== 'excluded' && fmtISO(d.date) >= todayISO
     ))
   );

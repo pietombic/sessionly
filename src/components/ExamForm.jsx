@@ -1,6 +1,16 @@
 import { useState, useRef } from 'react';
-import { TAG_COLORS, TYPES } from '../data.js';
+import { TAG_COLORS } from '../data.js';
 import { loadScore, statusLabel, startOfDay } from '../utils/dates.js';
+import {
+  PROOF_OPTIONS,
+  componentKind,
+  componentNeedsPlanning,
+  createExamComponent,
+  deriveLegacyExamType,
+  isPartialComponent,
+  normalizeExamComponents,
+  selectedProofs,
+} from '../utils/examStructure.js';
 import { CustomSlider, LoadBadge } from './ui/index.jsx';
 import { extractExamFromDescription } from '../utils/groq.js';
 import { useDialog } from '../hooks/useDialog.js';
@@ -20,7 +30,7 @@ const blank = {
   name: '',
   code: '',
   tag: 'amber',
-  type: 'scritto-orale',
+  type: 'custom',
   effort: 5,
   difficulty: 5,
   cfu: '',
@@ -30,8 +40,6 @@ const blank = {
   grade: null,
   gradeLode: false,
   notes: '',
-  partial1Done: false,
-  partial1Grade: 18,
   examApproach: null,
   pages: '',
   pdfCount: '',
@@ -58,10 +66,7 @@ const blank = {
     issues: '',
   },
   topicItems: [],
-  components: [
-    { name: 'Scritto', dates: [{ id: 'n1', date: null, time: '', room: '', locked: false, preference: 'alternative' }] },
-    { name: 'Orale',   dates: [{ id: 'n2', date: null, time: '', room: '', locked: false, preference: 'alternative' }] },
-  ],
+  components: [],
 };
 
 function reviveDates(key, val) {
@@ -103,13 +108,7 @@ function normalizeExam(source) {
           estimatedHours: '',
           importance: 'normal',
         })),
-    components: (source?.components || blank.components).map((component) => ({
-      ...component,
-      dates: component.dates.map((date) => ({
-        ...date,
-        preference: date.preference || 'alternative',
-      })),
-    })),
+    components: normalizeExamComponents(source?.components || blank.components, source),
   };
 }
 
@@ -173,27 +172,16 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
       const extracted = await extractExamFromDescription(voiceText);
 
       const newComponents = extracted.components?.length > 0
-        ? extracted.components.map((c, i) => ({
-            name: c.name,
+        ? normalizeExamComponents(extracted.components.map((c, i) => ({
+            ...c,
             dates: c.dates.map((d, j) => ({
+              ...d,
               id: `ext_${i}_${j}_${Date.now()}`,
-              date: d.date,
-              time: d.time,
-              room: d.room,
-              locked: d.locked,
-              preference: d.preference || 'alternative',
             })),
-          }))
+          })))
         : null;
 
-      let newType = draft.type;
-      if (newComponents) {
-        const names = new Set(newComponents.map((c) => c.name));
-        const matched = TYPES.find(
-          (t) => t.components.length === names.size && t.components.every((n) => names.has(n))
-        );
-        if (matched) newType = matched.id;
-      }
+      const newType = newComponents ? deriveLegacyExamType(newComponents) : draft.type;
 
       setDraft((prev) => ({
         ...prev,
@@ -235,7 +223,8 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
   };
 
   // ── exam result (post-date) ─────────────────────────────────────────────
-  const earliestDate = draft.components
+  const plannableComponents = draft.components.filter(componentNeedsPlanning);
+  const earliestDate = plannableComponents
     .flatMap((c) => c.dates.map((d) => d.date))
     .filter(Boolean)
     .sort((a, b) => a - b)[0];
@@ -244,27 +233,106 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
     && startOfDay(earliestDate) <= startOfDay(today);
 
   // ── form helpers ────────────────────────────────────────────────────────
-  const onTypeChange = (typeId) => {
-    const typeDef = TYPES.find((t) => t.id === typeId);
-    if (!typeDef) return;
-    setDraft((prev) => {
-      const byName = new Map(prev.components.map((c) => [c.name, c]));
-      const newComps = typeDef.components.map((cname) =>
-        byName.get(cname) || {
-          name: cname,
-          dates: [{ id: 'n_' + cname + Date.now(), date: null, time: '', room: '', locked: false, preference: 'alternative' }],
-        }
-      );
-      return { ...prev, type: typeId, components: newComps };
+  const sortComponents = (components) => {
+    const order = { partial: 0, written: 0, oral: 1, project: 2, practical: 3, discussion: 4 };
+    return [...components].sort((a, b) => {
+      const kindDiff = (order[componentKind(a)] ?? 99) - (order[componentKind(b)] ?? 99);
+      if (kindDiff) return kindDiff;
+      return a.name.localeCompare(b.name, 'it', { numeric: true });
     });
   };
 
-  const hasParziali = draft.type.startsWith('parziali');
+  const toggleProof = (proofId) => {
+    setDraft((prev) => {
+      const selected = selectedProofs(prev.components);
+      const removing = selected.has(proofId);
+      let components;
+      if (removing) {
+        components = prev.components.filter((component) => {
+          const kind = componentKind(component);
+          return proofId === 'written'
+            ? kind !== 'written' && kind !== 'partial'
+            : kind !== proofId;
+        });
+      } else {
+        components = [...prev.components, createExamComponent(proofId)];
+      }
+      components = sortComponents(components);
+      return { ...prev, components, type: deriveLegacyExamType(components) };
+    });
+  };
+
+  const setWrittenMode = (mode) => {
+    setDraft((prev) => {
+      const partials = prev.components.filter(isPartialComponent);
+      const written = prev.components.find((component) => componentKind(component) === 'written');
+      const withoutWritten = prev.components.filter((component) => {
+        const kind = componentKind(component);
+        return kind !== 'written' && kind !== 'partial';
+      });
+      let replacements;
+      if (mode === 'partials') {
+        const first = createExamComponent('partial', 1);
+        replacements = [
+          written
+            ? {
+                ...first,
+                dates: written.dates,
+                status: written.status || 'pending',
+                grade: written.grade ?? null,
+              }
+            : first,
+          createExamComponent('partial', 2),
+        ];
+      } else {
+        const source = partials.find(componentNeedsPlanning) || partials[0];
+        const single = createExamComponent('written');
+        replacements = [source
+          ? {
+              ...single,
+              dates: source.dates,
+              status: source.status === 'completed' ? 'pending' : source.status,
+              grade: null,
+            }
+          : single];
+      }
+      const components = sortComponents([...withoutWritten, ...replacements]);
+      return { ...prev, components, type: deriveLegacyExamType(components) };
+    });
+  };
+
+  const setPartialCount = (count) => {
+    setDraft((prev) => {
+      const others = prev.components.filter((component) => !isPartialComponent(component));
+      const existing = prev.components.filter(isPartialComponent);
+      const partials = Array.from({ length: count }, (_, index) => {
+        const current = existing[index];
+        const number = index + 1;
+        return current
+          ? { ...current, name: `Parziale ${number}`, kind: 'partial' }
+          : createExamComponent('partial', number);
+      });
+      const components = sortComponents([...others, ...partials]);
+      return { ...prev, components, type: deriveLegacyExamType(components) };
+    });
+  };
+
+  const selectedProofSet = selectedProofs(draft.components);
+  const partialComponents = draft.components.filter(isPartialComponent);
+  const writtenMode = partialComponents.length ? 'partials' : 'single';
 
   const setComp = (idx, fn) =>
     setDraft((prev) => ({
       ...prev,
       components: prev.components.map((c, i) => (i === idx ? fn(c) : c)),
+    }));
+
+  const updateComponent = (componentId, patch) =>
+    setDraft((prev) => ({
+      ...prev,
+      components: prev.components.map((component) =>
+        component.id === componentId ? { ...component, ...patch } : component
+      ),
     }));
 
   const addDate = (ci) =>
@@ -340,16 +408,24 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
       setFormError('Inserisci il nome dell’esame.');
       return;
     }
+    if (draft.components.length === 0) {
+      setFormError('Seleziona almeno una prova prevista per l’esame.');
+      return;
+    }
     setFormError('');
     const cleanTopics = draft.topicItems
       .filter((topic) => topic.name.trim())
       .map((topic) => ({ ...topic, name: topic.name.trim() }));
     setSaving(true);
     try {
+      const firstPartial = draft.components.find((component) => component.name === 'Parziale 1');
       await onSave({
         ...draft,
         name: draft.name.trim(),
         code: draft.code.trim(),
+        type: deriveLegacyExamType(draft.components),
+        partial1Done: firstPartial?.status === 'completed',
+        partial1Grade: firstPartial?.grade ?? null,
         topicItems: cleanTopics,
         topics: cleanTopics.map((topic) => topic.name).join('\n'),
       });
@@ -373,7 +449,7 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
     }
   };
 
-  const planningDates = draft.components
+  const planningDates = plannableComponents
     .map((component) => component.dates
       .map((date) => ({ ...date, componentName: component.name }))
       .filter((date) => date.date && date.preference !== 'excluded')
@@ -572,22 +648,135 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
               </div>
             </div>
             <div className="exam-form-section-body">
-            <div className="type-grid">
-              {TYPES.map((t) => (
+            <div className="proof-selector" role="group" aria-label="Prove previste">
+              {PROOF_OPTIONS.map((proof) => {
+                const selected = selectedProofSet.has(proof.id);
+                return (
                 <button
-                  key={t.id}
-                  className={`type-card ${draft.type === t.id ? 'on' : ''}`}
-                  onClick={() => onTypeChange(t.id)}
+                  key={proof.id}
+                  type="button"
+                  className={`proof-option ${selected ? 'on' : ''}`}
+                  onClick={() => toggleProof(proof.id)}
+                  aria-pressed={selected}
                 >
-                  <span className="ttype-icon">{t.short}</span>
-                  <span className="type-card-copy">
-                    <strong>{t.label}</strong>
-                    <small>{t.components.join(' + ')}</small>
+                  <span className="proof-option-icon">{proof.short}</span>
+                  <span className="proof-option-copy">
+                    <strong>{proof.label}</strong>
+                    <small>{proof.description}</small>
                   </span>
-                  <span className="type-card-check" aria-hidden="true">{draft.type === t.id ? '✓' : ''}</span>
+                  <span className="proof-option-check" aria-hidden="true">{selected ? '✓' : '+'}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
+
+            {selectedProofSet.has('written') && (
+              <div className="written-configuration">
+                <div className="written-configuration-head">
+                  <div>
+                    <strong>Come è organizzato lo scritto?</strong>
+                    <small>Se è diviso in parziali, puoi indicare quali hai già sostenuto.</small>
+                  </div>
+                  <div className="settings-choice written-mode-choice" role="radiogroup" aria-label="Tipo di prova scritta">
+                    <button
+                      type="button"
+                      className={writtenMode === 'single' ? 'active' : ''}
+                      role="radio"
+                      aria-checked={writtenMode === 'single'}
+                      onClick={() => writtenMode !== 'single' && setWrittenMode('single')}
+                    >
+                      Prova unica
+                    </button>
+                    <button
+                      type="button"
+                      className={writtenMode === 'partials' ? 'active' : ''}
+                      role="radio"
+                      aria-checked={writtenMode === 'partials'}
+                      onClick={() => writtenMode !== 'partials' && setWrittenMode('partials')}
+                    >
+                      Parziali
+                    </button>
+                  </div>
+                </div>
+
+                {writtenMode === 'partials' && (
+                  <div className="partial-configuration">
+                    <label className="partial-count-field">
+                      <span>Numero di parziali</span>
+                      <select
+                        className="input"
+                        value={partialComponents.length}
+                        onChange={(event) => setPartialCount(Number(event.target.value))}
+                      >
+                        {[2, 3, 4].map((count) => (
+                          <option key={count} value={count}>{count}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="partial-status-list">
+                      {partialComponents.map((component) => (
+                        <div className={`partial-status-card status-${component.status}`} key={component.id}>
+                          <div>
+                            <strong>{component.name}</strong>
+                            <small>
+                              {component.status === 'completed'
+                                ? 'Già superato: non verrà pianificato.'
+                                : component.status === 'failed'
+                                  ? 'Non superato: verrà pianificato nuovamente.'
+                                  : 'Ancora da sostenere.'}
+                            </small>
+                          </div>
+                          <select
+                            className="input"
+                            value={component.status}
+                            onChange={(event) => {
+                              const status = event.target.value;
+                              const currentGrade = Number(component.grade);
+                              updateComponent(component.id, {
+                                status,
+                                grade: status === 'pending'
+                                  ? null
+                                  : status === 'completed'
+                                    ? Math.max(18, Number.isFinite(currentGrade) ? currentGrade : 18)
+                                    : Math.min(17, Number.isFinite(currentGrade) ? currentGrade : 0),
+                              });
+                            }}
+                            aria-label={`Stato ${component.name}`}
+                          >
+                            <option value="pending">Da sostenere</option>
+                            <option value="completed">Superato</option>
+                            <option value="failed">Non superato</option>
+                          </select>
+                          {component.status !== 'pending' && (
+                            <label className="partial-grade-field">
+                              <span>Voto</span>
+                              <input
+                                className="input mono"
+                                type="number"
+                                min={component.status === 'completed' ? 18 : 0}
+                                max={component.status === 'completed' ? 30 : 17}
+                                value={component.grade ?? ''}
+                                onChange={(event) => updateComponent(component.id, {
+                                  grade: event.target.value === '' ? null : Number(event.target.value),
+                                })}
+                                aria-label={`Voto ${component.name}`}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {draft.components.length === 0 && (
+              <div className="exam-field-error" role="status">
+                Seleziona almeno una prova per continuare.
+              </div>
+            )}
             </div>
           </section>
 
@@ -733,39 +922,6 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
             </div>
           </div>
 
-          {/* ── parziali ─────────────────────────── */}
-          {hasParziali && (
-            <div className="field exam-partial-panel">
-              <label className="field-label">Stato parziali</label>
-              <div className="exam-partial-row">
-                <button
-                  className={`toggle-lock ${draft.partial1Done ? 'on' : ''}`}
-                  onClick={() => set({ partial1Done: !draft.partial1Done })}
-                >
-                  {draft.partial1Done ? '✓' : '○'} Parziale 1 sostenuto
-                </button>
-                {draft.partial1Done && (
-                  <div className="exam-partial-grade">
-                    <span>Voto:</span>
-                    <input
-                      type="number"
-                      className="input mono exam-grade-input"
-                      min={0} max={31}
-                      value={draft.partial1Grade}
-                      onChange={(e) => set({ partial1Grade: Number(e.target.value) })}
-                    />
-                    <span>/30</span>
-                    <span
-                      className={`badge ${draft.partial1Grade >= 18 ? 'status-done' : ''}`}
-                      style={draft.partial1Grade < 18 ? { color: 'var(--warn)', borderColor: 'var(--warn)' } : {}}
-                    >
-                      {draft.partial1Grade >= 18 ? 'Superato' : 'Non superato'}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
             </div>
           </section>
 
@@ -779,7 +935,7 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
               </div>
             </div>
             <div className="exam-form-section-body exam-dates-body">
-          {draft.components.length > 1 && (
+          {plannableComponents.length > 1 && (
             <div className="field exam-dependency-field">
               <label className="field-label">Relazione tra le prove</label>
               <select
@@ -799,11 +955,25 @@ export function ExamForm({ initial, allExams = [], sliderStyle, today, onClose, 
             <span><strong>Data bloccata</strong> significa che l’appello è fisso o unico e deve essere rispettato dal piano.</span>
           </div>
           {draft.components.map((comp, ci) => (
-            <div key={comp.name} className="date-component">
+            <div
+              key={comp.id || comp.name}
+              className={`date-component ${componentNeedsPlanning(comp) ? '' : 'component-completed'}`}
+            >
               <div className="comp-hd">
-                <h4>{comp.name}</h4>
-                <button className="btn-text exam-add-date" onClick={() => addDate(ci)}>+ Aggiungi appello</button>
+                <div>
+                  <h4>{comp.name}</h4>
+                  {!componentNeedsPlanning(comp) && <span className="component-status-badge">Superato</span>}
+                  {comp.status === 'failed' && <span className="component-status-badge failed">Da rifare</span>}
+                </div>
+                <button type="button" className="btn-text exam-add-date" onClick={() => addDate(ci)}>
+                  + Aggiungi {componentNeedsPlanning(comp) ? 'appello' : 'data storica'}
+                </button>
               </div>
+              {!componentNeedsPlanning(comp) && (
+                <div className="field-hint">
+                  Questa prova resta nello storico ma non viene considerata dal Piano AI.
+                </div>
+              )}
               <div className="date-rows">
                 {comp.dates.map((dt) => (
                   <div key={dt.id} className={`date-row ${dt.locked ? 'locked' : ''}`}>

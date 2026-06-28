@@ -1,4 +1,9 @@
 import { supabase } from './supabase.js';
+import {
+  componentNeedsPlanning,
+  deriveLegacyExamType,
+  normalizeExamComponents,
+} from '../utils/examStructure.js';
 
 // ── Serialization ────────────────────────────────────────────────────────────
 
@@ -79,7 +84,16 @@ export async function fetchExams() {
     .select('id, data')
     .order('created_at', { ascending: true });
   if (error) throw error;
-  return data.map((row) => ({ id: row.id, ...reviveExam(row.data) }));
+  return data.map((row) => {
+    const revived = reviveExam(row.data);
+    const components = normalizeExamComponents(revived.components, revived);
+    return {
+      id: row.id,
+      ...revived,
+      type: deriveLegacyExamType(components),
+      components,
+    };
+  });
 }
 
 export async function upsertExam(exam, _userId, taskMoves = []) {
@@ -215,6 +229,7 @@ export async function buildStudyEvents(studyWindows, exams, studyPrefs, provided
     const exam = examById.get(examId);
     if (!exam) return Infinity;
     const times = exam.components
+      .filter(componentNeedsPlanning)
       .flatMap((component) => component.dates
         .filter((date) => date.date && date.preference !== 'excluded')
         .map((date) => date.date)

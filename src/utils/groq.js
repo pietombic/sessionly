@@ -18,6 +18,12 @@ export function hasGroqKey() {
 }
 
 import { supabase } from '../lib/supabase.js';
+import {
+  componentKind,
+  componentNeedsPlanning,
+  deriveLegacyExamType,
+  normalizeExamComponents,
+} from './examStructure.js';
 
 async function getSessionToken() {
   try {
@@ -88,7 +94,9 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
   "topics": ["argomento1", "argomento2"],
   "components": [
     {
-      "name": "Scritto|Orale|Pratico|Progetto|Discussione|Parziale 1|Parziale 2",
+      "name": "Scritto|Orale|Pratico|Progetto|Discussione|Parziale 1|Parziale 2|Parziale 3|Parziale 4",
+      "status": "pending|completed|failed",
+      "grade": <voto o null>,
       "dates": [{ "date": "YYYY-MM-DD", "time": "HH:MM o null", "room": "aula o null", "locked": false, "preference": "alternative" }]
     }
   ]
@@ -101,6 +109,11 @@ Regole difficulty (difficoltà concettuale):
   abbastanza semplice / facile → 3-4 | normale → 5 | difficile/ostico → 7-8 | matematica pesante → 8-9
 
 Regole examApproach: esami con esercizi/lab/codice/problemi → pratico | solo teoria/orale → teorico | entrambi → misto
+
+Regole prove già sostenute:
+  "già superato", "fatto", "passato" → status completed
+  "non superato", "bocciato", "da rifare" → status failed
+  altrimenti → status pending
 
 Regole date: se l'anno manca usa ${currentYear} se la data è futura, altrimenti ${currentYear + 1}.
   Distingui le date per componente. Includi orali condizionali.
@@ -141,6 +154,10 @@ Rispondi SOLO con JSON valido, zero markdown.`;
     topics: Array.isArray(parsed.topics) ? parsed.topics.filter(Boolean) : [],
     components: (parsed.components || []).map((c) => ({
       name: c.name,
+      kind: componentKind(c),
+      status: ['pending', 'completed', 'failed'].includes(c.status) ? c.status : 'pending',
+      grade: c.grade == null ? null : Number(c.grade),
+      required: true,
       dates: (c.dates || []).map((d) => ({
         date: d.date ? new Date(d.date + 'T00:00:00') : null,
         time: d.time && d.time !== 'null' ? d.time : '',
@@ -166,6 +183,7 @@ export async function generateSessionPlan(exams, preferences, includeStudyBlocks
     .map((e) => ({
       ...e,
       components: e.components
+        .filter(componentNeedsPlanning)
         .map((c) => ({
           ...c,
           dates: c.dates.filter((d) =>
@@ -564,47 +582,38 @@ ${studyBlocksRule}`;
 
 // ── Image → exams extraction (vision model) ──────────────────────────────────
 
-function inferType(components) {
-  const names = new Set((components || []).map((c) => c.name));
-  if (names.has('Parziale 1') && names.has('Orale')) return 'parziali-orale';
-  if (names.has('Parziale 1')) return 'parziali';
-  if (names.has('Scritto') && names.has('Pratico') && names.has('Progetto')) return 'scritto-prat-pj';
-  if (names.has('Scritto') && names.has('Pratico')) return 'scritto-prat';
-  if (names.has('Scritto') && names.has('Orale')) return 'scritto-orale';
-  if (names.has('Progetto') && names.has('Discussione')) return 'progetto';
-  if (names.has('Scritto')) return 'scritto';
-  if (names.has('Orale')) return 'orale';
-  return 'scritto-orale';
-}
-
 function reviveExamDrafts(rawExams) {
-  return rawExams.map((e, ei) => ({
-    name: e.name || 'Esame senza nome',
-    tag: e.tag || 'amber',
-    effort: 5,
-    difficulty: 5,
-    priority: 'media',
-    status: 'todo',
-    notes: '',
-    partial1Done: false,
-    partial1Grade: 18,
-    examApproach: null,
-    pages: '',
-    pdfCount: '',
-    topics: '',
-    type: inferType(e.components),
-    components: (e.components || [{ name: 'Scritto', dates: [] }]).map((c) => ({
-      name: c.name,
-      dates: (c.dates || []).map((d, di) => ({
-        id: `img_${ei}_${di}_${Date.now()}`,
-        date: d.date ? new Date(d.date + 'T00:00:00') : null,
-        time: d.time && d.time !== 'null' ? d.time : '',
-        room: d.room && d.room !== 'null' ? d.room : '',
-        locked: false,
-        preference: 'alternative',
-      })),
-    })),
-  }));
+  return rawExams.map((e, ei) => {
+    const components = normalizeExamComponents(
+      (e.components || [{ name: 'Scritto', dates: [] }]).map((c, ci) => ({
+        ...c,
+        status: 'pending',
+        dates: (c.dates || []).map((d, di) => ({
+          id: `img_${ei}_${ci}_${di}_${Date.now()}`,
+          date: d.date ? new Date(d.date + 'T00:00:00') : null,
+          time: d.time && d.time !== 'null' ? d.time : '',
+          room: d.room && d.room !== 'null' ? d.room : '',
+          locked: false,
+          preference: 'alternative',
+        })),
+      }))
+    );
+    return {
+      name: e.name || 'Esame senza nome',
+      tag: e.tag || 'amber',
+      effort: 5,
+      difficulty: 5,
+      priority: 'media',
+      status: 'todo',
+      notes: '',
+      examApproach: null,
+      pages: '',
+      pdfCount: '',
+      topics: '',
+      type: deriveLegacyExamType(components),
+      components,
+    };
+  });
 }
 
 // Accepts an array of { base64, mimeType } — all images sent in one request so the
@@ -631,7 +640,7 @@ Data di oggi: ${today}. Se l'anno non è visibile né deducibile, usa ${currentY
 
 ═══ FASE 2 — MAPPA LE COMPONENTI ═══
 Il nome della componente nel JSON DEVE essere ESATTAMENTE uno di questi valori canonici:
-  "Scritto" | "Orale" | "Pratico" | "Progetto" | "Discussione" | "Parziale 1" | "Parziale 2"
+  "Scritto" | "Orale" | "Pratico" | "Progetto" | "Discussione" | "Parziale 1" | "Parziale 2" | "Parziale 3" | "Parziale 4"
 
 Regole di mappatura (esempi):
 - "esame scritto", "esame totale", "prova scritta", "scritto LP", "totale LP", qualsiasi variante scritta → "Scritto"
@@ -639,6 +648,8 @@ Regole di mappatura (esempi):
 - "laboratorio", "lab", "prova pratica" → "Pratico"
 - "1° parziale", "primo parziale", "parziale 1", "I parziale" → "Parziale 1"
 - "2° parziale", "secondo parziale", "parziale 2", "II parziale" → "Parziale 2"
+- "3° parziale", "terzo parziale", "parziale 3", "III parziale" → "Parziale 3"
+- "4° parziale", "quarto parziale", "parziale 4", "IV parziale" → "Parziale 4"
 - "progetto" → "Progetto"
 - "discussione progetto", "discussione" → "Discussione"
 NON usare mai nomi inventati o copiati dallo screenshot. Solo i valori canonici sopra.
@@ -656,7 +667,7 @@ Restituisci SOLO JSON valido senza markdown:
     "tag": "amber|brick|sage|plum|teal|ochre|indigo",
     "components": [
       {
-        "name": "Scritto|Orale|Pratico|Progetto|Discussione|Parziale 1|Parziale 2",
+        "name": "Scritto|Orale|Pratico|Progetto|Discussione|Parziale 1|Parziale 2|Parziale 3|Parziale 4",
         "dates": [{"date": "YYYY-MM-DD", "time": "HH:MM o null", "room": "aula o null"}]
       }
     ]

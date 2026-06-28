@@ -353,6 +353,32 @@ begin
   for item in
     select value from jsonb_array_elements(coalesce(p_task_moves, '[]'::jsonb))
   loop
+    if item ? 'deleteComponent' then
+      delete from public.exam_date_picks
+        where user_id = v_user
+          and exam_id = p_exam_id
+          and component_name = item->>'deleteComponent';
+      delete from public.event_tasks
+        where user_id = v_user
+          and starts_with(
+            coalesce(ref_key, ''),
+            'exam:' || p_exam_id || ':' || (item->>'deleteComponent') || ':'
+          );
+    elsif item ? 'deactivateComponent' then
+      delete from public.exam_date_picks
+        where user_id = v_user
+          and exam_id = p_exam_id
+          and component_name = item->>'deactivateComponent';
+    end if;
+    if item ? 'deleteRef' then
+      delete from public.event_tasks
+        where user_id = v_user and ref_key = item->>'deleteRef';
+      delete from public.exam_date_picks
+        where user_id = v_user
+          and exam_id = p_exam_id
+          and component_name = item->>'oldComponent'
+          and pick_date = (item->>'oldDate')::date;
+    end if;
     if item->>'oldRef' is distinct from item->>'newRef' then
       update public.event_tasks
         set ref_key = item->>'newRef'

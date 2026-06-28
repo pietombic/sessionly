@@ -18,9 +18,11 @@ const SECTIONS = [
     title: 'Inserisci gli esami',
     body: [
       'Premi Esame o Aggiungi per creare un esame con date, ore rimanenti, preparazione attuale, obiettivo e preferenze di studio.',
-      'Ogni componente — scritto, orale, progetto o parziale — può avere più appelli, una data preferita, alternative ed eventuali date bloccate.',
+      'Seleziona liberamente le prove previste — scritto, orale, progetto, pratico e discussione — senza dover scegliere una combinazione predefinita.',
     ],
     tips: [
+      'Lo scritto può essere una prova unica oppure essere diviso in due, tre o quattro parziali.',
+      'Un parziale già superato rimane nello storico ma non viene inserito nel Piano AI; uno non superato viene pianificato nuovamente.',
       'Descrivi con AI compila il modulo partendo da testo o dettatura.',
       'Programma, materiali e storico raccoglie la checklist degli argomenti, il materiale disponibile e gli eventuali tentativi precedenti.',
       'Il riepilogo Impatto sul piano segnala carichi troppo intensi e sovrapposizioni con altri esami.',

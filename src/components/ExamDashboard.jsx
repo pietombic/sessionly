@@ -1,3 +1,5 @@
+import { componentNeedsPlanning } from '../utils/examStructure.js';
+
 function fmtDateISO(d) {
   if (!d) return null;
   const dt = d instanceof Date ? d : new Date(d);
@@ -13,6 +15,7 @@ function effectiveExamDate(exam, datePicks, today) {
   if (picked.length) return picked[0];
 
   const all = exam.components
+    .filter(componentNeedsPlanning)
     .flatMap((c) => c.dates.map((d) => d.date))
     .filter((date) => date && fmtDateISO(date) >= todayISO)
     .sort((a, b) => a - b);

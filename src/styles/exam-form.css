@@ -321,81 +321,195 @@
   margin-left: auto;
 }
 
-.exam-form-modal .type-grid {
+.proof-selector {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.exam-form-modal .type-card {
+.proof-option {
   min-width: 0;
-  min-height: 62px;
+  min-height: 66px;
   padding: 10px 11px;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) 22px;
+  align-items: center;
   gap: 10px;
   border: 1px solid var(--rule);
   border-radius: 11px;
   background: var(--paper);
+  color: var(--ink);
+  text-align: left;
   box-shadow: none;
 }
 
-.exam-form-modal .type-card:hover {
+.proof-option:hover {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--rule));
   background: color-mix(in srgb, var(--accent) 3%, var(--paper));
 }
 
-.exam-form-modal .type-card.on {
+.proof-option.on {
   border-color: color-mix(in srgb, var(--accent) 62%, var(--rule));
   background: color-mix(in srgb, var(--accent) 8%, var(--paper));
-  transform: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.exam-form-modal .type-card .ttype-icon {
+.proof-option-icon {
   width: 34px;
   height: 34px;
-  padding: 0;
+  display: grid;
+  place-items: center;
   border-radius: 9px;
   background: color-mix(in srgb, var(--accent) 12%, var(--paper-2));
   color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
 }
 
-.type-card-copy {
+.proof-option-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.type-card-copy strong {
+.proof-option-copy strong {
   overflow: hidden;
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.type-card-copy small {
+.proof-option-copy small {
   overflow: hidden;
   color: var(--ink-soft);
-  font-size: 8px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.type-card-check {
+.proof-option-check {
   width: 20px;
   height: 20px;
   display: grid;
   place-items: center;
   border: 1px solid var(--rule-strong);
   border-radius: 50%;
-  color: var(--paper);
+  color: var(--ink-soft);
   font-size: 10px;
 }
 
-.type-card.on .type-card-check {
+.proof-option.on .proof-option-check {
   border-color: var(--accent);
   background: var(--accent);
+  color: var(--paper);
+}
+
+.written-configuration {
+  padding: 15px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--rule));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
+}
+
+.written-configuration-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.written-configuration-head > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.written-configuration-head strong {
+  font-size: 12px;
+}
+
+.written-configuration-head small,
+.partial-status-card small {
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.written-mode-choice {
+  min-width: 230px;
+}
+
+.partial-configuration {
+  display: grid;
+  gap: 10px;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule);
+}
+
+.partial-count-field {
+  width: min(210px, 100%);
+  display: grid;
+  grid-template-columns: 1fr 76px;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.partial-count-field .input {
+  min-height: 36px;
+  padding-block: 6px;
+}
+
+.partial-status-list {
+  display: grid;
+  gap: 8px;
+}
+
+.partial-status-card {
+  min-width: 0;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px 106px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.partial-status-card > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.partial-status-card > div:first-child strong {
+  font-size: 11px;
+}
+
+.partial-status-card.status-completed {
+  border-color: color-mix(in srgb, var(--tag-sage) 46%, var(--rule));
+}
+
+.partial-status-card.status-failed {
+  border-color: color-mix(in srgb, var(--warn) 38%, var(--rule));
+}
+
+.partial-status-card .input {
+  min-height: 38px;
+  padding-block: 7px;
+}
+
+.partial-grade-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 9px;
 }
 
 .exam-workload-body .slider-row {
@@ -599,32 +713,6 @@ html[data-dark="1"] .preparation-segments span.is-active {
   color: var(--ink);
 }
 
-.exam-partial-panel {
-  padding: 14px;
-  border: 1px solid var(--rule);
-  border-radius: 12px;
-  background: var(--paper-2);
-}
-
-.exam-partial-row,
-.exam-partial-grade {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-}
-
-.exam-partial-grade {
-  color: var(--ink-soft);
-  font-family: var(--mono);
-  font-size: 10px;
-}
-
-.exam-grade-input {
-  width: 72px !important;
-  min-height: 36px !important;
-}
-
 .exam-dates-body {
   gap: 20px;
 }
@@ -664,6 +752,32 @@ html[data-dark="1"] .preparation-segments span.is-active {
   font-family: var(--sans);
   font-size: 12px;
   font-weight: 700;
+}
+
+.exam-form-modal .date-component .comp-hd > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.component-status-badge {
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--tag-sage) 50%, var(--rule));
+  border-radius: 999px;
+  color: var(--tag-sage);
+  font-family: var(--mono);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.component-status-badge.failed {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--rule));
+  color: var(--warn);
+}
+
+.date-component.component-completed {
+  opacity: .82;
 }
 
 .exam-add-date {
@@ -1048,7 +1162,8 @@ html[data-dark="1"] .exam-form-section-head {
 }
 
 html[data-dark="1"] .exam-form-modal .input,
-html[data-dark="1"] .exam-form-modal .type-card,
+html[data-dark="1"] .exam-form-modal .proof-option,
+html[data-dark="1"] .exam-form-modal .partial-status-card,
 html[data-dark="1"] .exam-form-modal .pill,
 html[data-dark="1"] .exam-form-modal .date-row .input {
   background: #0f1011;
@@ -1160,12 +1275,34 @@ html[data-dark="1"] .exam-form-modal .date-row .input {
     font-size: 16px;
   }
 
-  .exam-form-modal .type-grid {
+  .proof-selector {
     grid-template-columns: 1fr;
   }
 
-  .exam-form-modal .type-card {
+  .proof-option {
     min-height: 58px;
+  }
+
+  .proof-option-copy small {
+    white-space: normal;
+  }
+
+  .written-configuration-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .written-mode-choice {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .partial-status-card {
+    grid-template-columns: 1fr;
+  }
+
+  .partial-grade-field {
+    grid-template-columns: 52px minmax(0, 1fr);
   }
 
   .exam-form-modal .swatch {
@@ -1237,16 +1374,6 @@ html[data-dark="1"] .exam-form-modal .date-row .input {
     min-width: 0;
     min-height: 42px;
     font-size: 14px;
-  }
-
-  .exam-partial-row,
-  .exam-partial-grade {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .exam-grade-input {
-    width: 100% !important;
   }
 
   .exam-form-modal .pills {

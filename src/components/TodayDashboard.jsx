@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { TAG_CSS } from '../data.js';
+import { componentNeedsPlanning } from '../utils/examStructure.js';
 
 const DAY_MS = 86400000;
 
@@ -43,7 +44,7 @@ function getUpcomingExam(exams, datePicks, today) {
       const picked = datePicks.filter((pick) => pick.examId === exam.id);
       const source = picked.length
         ? picked.map((pick) => ({ date: pick.date, component: pick.componentName }))
-        : exam.components.flatMap((component) =>
+        : exam.components.filter(componentNeedsPlanning).flatMap((component) =>
             component.dates.map((entry) => ({ date: entry.date, component: component.name }))
           );
       source.forEach((entry) => {

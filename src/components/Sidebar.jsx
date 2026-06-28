@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { TAG_CSS } from '../data.js';
 import { startOfDay, formatDueLabel } from '../utils/dates.js';
+import { componentNeedsPlanning } from '../utils/examStructure.js';
 import { Dots, LoadBadge, StatusBadge } from './ui/index.jsx';
 
 const DONE_STATUSES = new Set(['done', 'failed', 'saltato']);
@@ -20,7 +21,7 @@ function getEffectiveDate(exam, datePicks, today) {
     return picks.sort((a, b) => a.date - b.date)[0].date;
   }
   // Fall back to soonest component date
-  const allDates = exam.components.flatMap((c) =>
+  const allDates = exam.components.filter(componentNeedsPlanning).flatMap((c) =>
     c.dates.map((d) => ({ ...d }))
   );
   const upcoming = allDates

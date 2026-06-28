@@ -24,17 +24,6 @@ export const TAG_CSS = {
   indigo: 'var(--tag-indigo)',
 };
 
-export const TYPES = [
-  { id: 'scritto',         label: 'Solo Scritto',                 short: 'S',   components: ['Scritto'] },
-  { id: 'orale',           label: 'Solo Orale',                   short: 'O',   components: ['Orale'] },
-  { id: 'scritto-orale',   label: 'Scritto + Orale',              short: 'SO',  components: ['Scritto', 'Orale'] },
-  { id: 'scritto-prat',    label: 'Scritto + Pratico',            short: 'SP',  components: ['Scritto', 'Pratico'] },
-  { id: 'scritto-prat-pj', label: 'Scritto + Pratico + Progetto', short: 'SPP', components: ['Scritto', 'Pratico', 'Progetto'] },
-  { id: 'parziali',        label: 'Parziale 1 + Parziale 2',     short: 'P1+P2', components: ['Parziale 1', 'Parziale 2'] },
-  { id: 'parziali-orale',  label: 'Parziali + Orale',            short: 'P+O', components: ['Parziale 1', 'Parziale 2', 'Orale'] },
-  { id: 'progetto',        label: 'Progetto + Discussione',       short: 'PD',  components: ['Progetto', 'Discussione'] },
-];
-
 let _id = 1000;
 const nextId = () => 'e' + (_id++);
 

@@ -11,6 +11,7 @@ import {
   updateExamDateAndTasks,
 } from './lib/db.js';
 import { hasGroqKey } from './utils/groq.js';
+import { componentNeedsPlanning } from './utils/examStructure.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { MonthHeader } from './components/MonthHeader.jsx';
 import { CalendarGrid } from './components/CalendarGrid.jsx';
@@ -79,17 +80,37 @@ function dateKey(value) {
 function examTaskMoves(previousExam, nextExam) {
   if (!previousExam) return [];
   const moves = [];
-  previousExam.components?.forEach((oldComponent, componentIndex) => {
-    const newComponent = nextExam.components?.find((component) => component.name === oldComponent.name)
-      || nextExam.components?.[componentIndex];
-    if (!newComponent) return;
+  previousExam.components?.forEach((oldComponent) => {
+    const oldDateIds = new Set(oldComponent.dates?.map((date) => date.id).filter(Boolean));
+    const newComponent = nextExam.components?.find((component) =>
+      oldComponent.id && component.id === oldComponent.id
+    )
+      || nextExam.components?.find((component) => component.name === oldComponent.name)
+      || nextExam.components?.find((component) =>
+        component.dates?.some((date) => oldDateIds.has(date.id))
+      );
+    if (!newComponent) {
+      moves.push({ deleteComponent: oldComponent.name });
+      return;
+    }
+    if (componentNeedsPlanning(oldComponent) && !componentNeedsPlanning(newComponent)) {
+      moves.push({ deactivateComponent: oldComponent.name });
+    }
     oldComponent.dates?.forEach((oldDate, dateIndex) => {
       const newDate = oldDate.id
         ? newComponent.dates?.find((date) => date.id === oldDate.id)
         : newComponent.dates?.[dateIndex];
       const oldKey = dateKey(oldDate.date);
       const newKey = dateKey(newDate?.date);
-      if (!oldKey || !newKey) return;
+      if (!oldKey) return;
+      if (!newKey) {
+        moves.push({
+          deleteRef: `exam:${previousExam.id}:${oldComponent.name}:${oldKey}`,
+          oldComponent: oldComponent.name,
+          oldDate: oldKey,
+        });
+        return;
+      }
       if (oldKey === newKey && oldComponent.name === newComponent.name) return;
       moves.push({
         oldRef: `exam:${previousExam.id}:${oldComponent.name}:${oldKey}`,
@@ -105,7 +126,20 @@ function examTaskMoves(previousExam, nextExam) {
 }
 
 function applyPickMoves(picks, examId, moves) {
-  return picks.map((pick) => {
+  const inactiveComponents = new Set(moves.flatMap((move) =>
+    [move.deactivateComponent, move.deleteComponent].filter(Boolean)
+  ));
+  const deletedDates = moves.filter((move) => move.deleteRef);
+  return picks.filter((pick) =>
+    pick.examId !== examId
+    || (
+      !inactiveComponents.has(pick.componentName)
+      && !deletedDates.some((move) =>
+        move.oldComponent === pick.componentName
+        && move.oldDate === dateKey(pick.date)
+      )
+    )
+  ).map((pick) => {
     if (pick.examId !== examId) return pick;
     const move = moves.find((entry) =>
       entry.oldComponent === pick.componentName
@@ -145,7 +179,7 @@ function EmptyState({ onAdd }) {
         <div className="step">
           <div className="num">01</div>
           <h4>Inserisci</h4>
-          <p>Nome, tipo, date. Anche più date alternative per scritto e orale.</p>
+          <p>Nome, prove e date. Combina liberamente scritto, orale, progetto e parziali.</p>
         </div>
         <div className="step">
           <div className="num">02</div>

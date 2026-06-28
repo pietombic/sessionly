@@ -5,7 +5,7 @@ const STEPS = [
   {
     number: '01',
     title: 'Inserisci i tuoi esami',
-    copy: 'Aggiungi date, difficoltà e priorità. Puoi anche importarli da uno screenshot.',
+    copy: 'Scegli le prove previste, configura eventuali parziali e aggiungi date, difficoltà e priorità.',
   },
   {
     number: '02',
